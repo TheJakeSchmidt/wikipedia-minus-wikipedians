@@ -1,0 +1,8 @@
+[package]
+name = "wikipedia_minus_wikipedians"
+version = "0.1.0"
+authors = ["jakeschmidt"]
+
+[dependencies]
+hyper = "*"
+rustc-serialize = "0.3"
