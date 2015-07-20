@@ -13,6 +13,8 @@ use hyper::header::Connection;
 use rustc_serialize::json;
 use tempfile::NamedTempFile;
 
+// TODO: Can I get rid of the repeated "Zachary_Taylor"s everywhere? Surely the MediaWiki API doesn't actually need that - I can't imagine revision IDs aren't unique across all pages.
+
 fn get_revisions(page: &str, limit: i32) -> String {
     let client = Client::new();
     let mut res = client.get(
@@ -28,8 +30,10 @@ fn get_revisions(page: &str, limit: i32) -> String {
     body
 }
 
-fn get_vandalism_revision_ids(page: &str) -> Vec<u64> {
-    let json = json::Json::from_str(&get_revisions(page, 50)).unwrap();
+// TODO: this name is terrible.
+// Returns pairs of (revid, parentid)
+fn get_revert_revision_ids(page: &str) -> Vec<(u64, u64)> {
+    let json = json::Json::from_str(&get_revisions(page, 60)).unwrap();
 
     let pages = json.as_object().unwrap().get("query").unwrap().as_object().unwrap().get("pages").unwrap().as_object().unwrap();
     let key = pages.keys().next().unwrap();
@@ -37,7 +41,19 @@ fn get_vandalism_revision_ids(page: &str) -> Vec<u64> {
         .get("revisions").unwrap().as_array().unwrap().into_iter()
         .map(|revision| revision.as_object().unwrap())
         .filter(|revision| { revision.get("comment").unwrap().as_string().unwrap().contains("vandal") })
-        .map(|revision| revision.get("parentid").unwrap().as_u64().unwrap()).collect()
+        .map(|revision| (revision.get("revid").unwrap().as_u64().unwrap(),
+                         revision.get("parentid").unwrap().as_u64().unwrap())).collect()
+}
+
+fn get_latest_revision_id(page: &str) -> u64 {
+    let json = json::Json::from_str(&get_revisions(page, 1)).unwrap();
+
+    let pages = json.as_object().unwrap().get("query").unwrap().as_object().unwrap().get("pages").unwrap().as_object().unwrap();
+    let key = pages.keys().next().unwrap();
+    pages.get(key).unwrap().as_object().unwrap()
+        .get("revisions").unwrap().as_array().unwrap().into_iter()
+        .next().unwrap().as_object().unwrap()
+        .get("revid").unwrap().as_u64().unwrap()
 }
 
 fn get_revision(page: &str, id: u64) -> String {
@@ -51,14 +67,13 @@ fn get_revision(page: &str, id: u64) -> String {
 
     let mut body = String::new();
     res.read_to_string(&mut body).unwrap();
-
     body
 }
 
 fn get_revision_content(page: &str, id: u64) -> String {
     let json = json::Json::from_str(&get_revision(page, id)).unwrap();
 
-    // TODO: try!() isntead of unwrap()? I genuinely don't know.
+    // TODO: try!() instead of unwrap()? I genuinely don't know.
     let pages = json.as_object().unwrap().get("query").unwrap().as_object().unwrap().get("pages").unwrap().as_object().unwrap();
     let key = pages.keys().next().unwrap();
     pages.get(key).unwrap().as_object().unwrap()
@@ -83,21 +98,37 @@ fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
 
     let mut process = Command::new("diff3");
     process.arg("-m").args(&[new1_tempfile.path(), old_tempfile.path(), new2_tempfile.path()])
-        .stdout(Stdio::piped()).stderr(Stdio::piped());
-    match process.status() {
-        Ok(exit_status) if exit_status.success() =>
-            Some(String::from_utf8(process.output().unwrap().stdout).unwrap()),
-        Ok(_) => None,
-        Err(_) => panic!("Could not get diff3 exit status"),
+        .stdout(Stdio::piped()).stderr(Stdio::null());
+    let output = process.output().unwrap();
+    if output.status.success() {
+        Some(String::from_utf8(output.stdout).unwrap())
+    } else {
+        None
     }
 }
 
 fn main() {
-    for id in get_vandalism_revision_ids("Zachary_Taylor") {
-        println!("\n\n\n\n\n\n\n\n\n\n");
-        println!("Revision {}:", id);
-        println!("{}\n", get_revision_content("Zachary_Taylor", id))
-    }
+    let latest_revid = get_latest_revision_id("Zachary_Taylor");
+    // TODO: this is disgusting.
+    let processed_contents = get_revert_revision_ids("Zachary_Taylor").into_iter().fold(
+        (get_revision_content("Zachary_Taylor", latest_revid), vec![latest_revid]),
+        |accumulated_contents, revision_ids| {
+            let revert_revid = revision_ids.0;
+            let vandalism_revid = revision_ids.1;
+            match merge(&get_revision_content("Zachary_Taylor", revert_revid),
+                        &get_revision_content("Zachary_Taylor", vandalism_revid),
+                        &accumulated_contents.0) {
+                Some(merged_contents) => {
+                    let mut merged_revision_ids = accumulated_contents.1;
+                    merged_revision_ids.push(revert_revid);
+                    (merged_contents, merged_revision_ids)
+                }
+                None => accumulated_contents
+            }
+        });
+
+    println!("Restored vandalisms reverted in: {:?}", processed_contents.1);
+    println!("{}", processed_contents.0);
 }
 
 #[cfg(test)]
