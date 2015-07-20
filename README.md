@@ -1,3 +1,3 @@
-# wikipedia-without-wikipedians
+# wikipedia-minus-wikipedians
 
 TODO: Write README.
