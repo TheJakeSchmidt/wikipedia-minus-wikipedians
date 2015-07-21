@@ -7,7 +7,7 @@ use rustc_serialize::json::Json::{Array, Object};
 
 pub enum JsonPathElement {
     Key(&'static str), // Use the value associated with a specific key.
-    Only the only value in an array or object.
+    Only,               // Use the only value in an array or object.
 }
 
 use json::JsonPathElement::Key;
