@@ -30,6 +30,7 @@ use json::JsonPathElement::{Key, Only};
 
 // TODO: there are some places where I've handrolled try!() equivalents. Fix those.
 // TODO: make sure I'm returning Results everywhere, and propagating errors correctly.
+// TODO: randomize placeholder per-request
 
 // TODO: Can I get rid of the repeated "Zachary_Taylor"s everywhere? Surely the MediaWiki API doesn't actually need that - I can't imagine revision IDs aren't unique across all pages.
 
@@ -55,38 +56,25 @@ fn get_revert_revision_ids(page: &str) -> Result<Vec<(u64, u64)>, String> {
     let revisions = try!(
         json::get_json_array(&json, &[Key("query"), Key("pages"), Only, Key("revisions")]));
 
-    // Filter for revisions that mention vandalism
-    let filtered_revisions =
-        revisions.into_iter().filter(|revision| {
-            match json::get_json_string(revision, &[Key("comment")]) {
-                Ok(ref comment) => comment.contains("vandal"),
-                // TODO: need to warn somehow when this happens, because it generally shouldn't.
-                _ => false,
-            }
-        })
-        // Filter out revisions with missing revid or parentid (which shouldn't happen).
-        .filter(|revision| {
-            match (json::get_json_number(revision, &[Key("revid")]),
-                   json::get_json_number(revision, &[Key("parentid")])) {
-                (Ok(_), Ok(_)) => true,
-                // TODO: need to warn somehow when this happens, because it should never.
-                _ => false,
-            }});
-    Ok(filtered_revisions.map(|revision| {
-        (json::get_json_number(revision, &[Key("revid")]).unwrap(),
-         json::get_json_number(revision, &[Key("parentid")]).unwrap())
-    }).collect())
+    // Filter for revisions that mention vandalism, and that have revid and parentid (which they all
+    // should, but merits checking).
+    Ok(revisions.into_iter().filter(|revision| {
+        match (json::get_json_string(revision, &[Key("comment")]),
+               json::get_json_number(revision, &[Key("revid")]),
+               json::get_json_number(revision, &[Key("parentid")])) {
+            (Ok(ref comment), Ok(_), Ok(_)) => comment.contains("vandal"),
+            _ => false,
+        }})
+       .map(|revision| {
+           (json::get_json_number(revision, &[Key("revid")]).unwrap(),
+            json::get_json_number(revision, &[Key("parentid")]).unwrap())
+       }).collect())
 }
 
-fn get_latest_revision_id(page: &str) -> u64 {
+fn get_latest_revision_id(page: &str) -> Result<u64, String> {
     let json = Json::from_str(&get_revisions(page, 1)).unwrap();
-    let revision_id = json::get_json_number(
-        &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("revid")]);
-    match revision_id {
-        Ok(revision_id) => revision_id,
-        // TODO: This function should return a Result so we don't have to panic here.
-        Err(message) => panic!(format!("Failed to get latest revision ID: \"{}\"", message)),
-    }
+    json::get_json_number(
+        &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("revid")])
 }
 
 fn get_revision(page: &str, id: u64) -> String {
@@ -103,11 +91,13 @@ fn get_revision(page: &str, id: u64) -> String {
     body
 }
 
-fn get_revision_content(page: &str, id: u64) -> String {
-    // TODO: this function should return a Result so we don't have to unwrap() here.
-    json::get_json_string(
-        &Json::from_str(&get_revision(page, id)).unwrap(),
-        &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")]).unwrap().to_string()
+fn get_revision_content(page: &str, id: u64) -> Result<String, String> {
+    let json = Json::from_str(&get_revision(page, id)).unwrap();
+    match json::get_json_string(
+        &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")]) {
+        Ok(content) => Ok(content.to_string()),
+        Err(msg) => Err(msg),
+    }
 }
 
 fn write_to_temp_file(contents: &str) -> NamedTempFile {
@@ -150,8 +140,6 @@ fn render(wikitext: &str) -> Result<String, String> {
     let mut body = String::new();
     res.read_to_string(&mut body).unwrap();
 
-    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    println!("{}", body);
     // TODO: check return value
     let json = Json::from_str(&body).unwrap();
     match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
@@ -190,12 +178,12 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
     }
 }
 
-fn process_html(original_html: &str, div_id: &str, replacement_text: &str) -> Result<String, String> {
+fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder: &str) -> Result<String, String> {
     // TODO: check errors
     let html = tendril::StrTendril::from_str(original_html).unwrap();
     let mut dom: RcDom = html5ever::parse(html5ever::one_input(html), Default::default());
 
-    let handle = try!(find_node_by_id(&dom.get_document(), "mw-content-text"));
+    let handle = try!(find_node_by_id(&dom.get_document(), div_id));
     let child_handles =
         (&handle.borrow().children).into_iter().map(|child| child.clone()).collect::<Vec<_>>();
     for child_handle in child_handles {
@@ -203,20 +191,33 @@ fn process_html(original_html: &str, div_id: &str, replacement_text: &str) -> Re
     }
     dom.append(handle,
                html5ever::tree_builder::interface::NodeOrText::AppendText(
-                   tendril::StrTendril::from_str(replacement_text).unwrap()));
+                   tendril::StrTendril::from_str(placeholder).unwrap()));
     let mut serialized: Vec<u8> = vec![];
     html5ever::serialize::serialize(&mut serialized, &dom.document, Default::default());
     // TODO: error handling
     Ok(String::from_utf8(serialized).unwrap())
 }
 
+fn get_current_page(page: &str) -> String {
+    let client = Client::new();
+    let mut res = client.get(
+        &format!("https://en.wikipedia.org/wiki/{}", page))
+        .header(Connection::close())
+        .send().unwrap();
+
+    let mut body = String::new();
+    res.read_to_string(&mut body).unwrap();
+
+    body
+}
+
 fn main() {
-    let latest_revid = get_latest_revision_id("Zachary_Taylor");
-    let mut accumulated_contents = get_revision_content("Zachary_Taylor", latest_revid);
+    let latest_revid = get_latest_revision_id("Zachary_Taylor").unwrap();
+    let mut accumulated_contents = get_revision_content("Zachary_Taylor", latest_revid).unwrap();
     let mut revisions = vec![];
     for (revert_revid, vandalism_revid) in get_revert_revision_ids("Zachary_Taylor").ok().unwrap() {
-        let reverted_contents = get_revision_content("Zachary_Taylor", revert_revid);
-        let vandalized_contents = get_revision_content("Zachary_Taylor", vandalism_revid);
+        let reverted_contents = get_revision_content("Zachary_Taylor", revert_revid).unwrap();
+        let vandalized_contents = get_revision_content("Zachary_Taylor", vandalism_revid).unwrap();
         match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
             Some(merged_contents) => {
                 accumulated_contents = merged_contents;
@@ -226,18 +227,20 @@ fn main() {
         }
     }
 
-    match render(&accumulated_contents) {
-        Ok(contents) => {
-            println!("Restored vandalisms reverted in: {:?}", revisions);
-            println!("{}", contents);
-        },
-        Err(message) => panic!(message),
-    }
+    let rendered_body = render(&accumulated_contents).unwrap();
+    let current_page_contents = get_current_page("Zachary_Taylor");
+    let page_contents_with_placeholder =
+        replace_node_with_placeholder(
+            &current_page_contents, "mw-content-text", "WMW_PLACEHOLDER_TEXT").unwrap();
+    let final_page_contents = page_contents_with_placeholder.replace("WMW_PLACEHOLDER_TEXT", &rendered_body);
+
+    println!("Restored vandalisms reverted in: {:?}", revisions);
+    println!("{}", final_page_contents);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{merge, process_html};
+    use super::{merge, replace_node_with_placeholder};
 
     #[test]
     fn test_merge_clean() {
@@ -267,7 +270,7 @@ mod tests {
     fn test_replace_html_content() {
         let original_html = "<html><head></head><body><div id=\"content\"><div id=\"bodyContent\"><div id=\"mw-content-text\"><p>original text</p></div><div>Other text</div></div></div></body></html>";
         let expected_html = "<html><head></head><body><div id=\"content\"><div id=\"bodyContent\"><div id=\"mw-content-text\">replaced text</div><div>Other text</div></div></div></body></html>";
-        let processed_html = process_html(original_html, "mw-content-text", "replaced text").unwrap();
+        let processed_html = replace_node_with_placeholder(original_html, "mw-content-text", "replaced text").unwrap();
         assert_eq!(expected_html, processed_html);
     }
 }
