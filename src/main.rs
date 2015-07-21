@@ -1,6 +1,7 @@
 extern crate hyper;
 extern crate rustc_serialize;
 extern crate tempfile;
+extern crate url;
 
 mod json;
 
@@ -14,6 +15,7 @@ use hyper::Client;
 use hyper::header::Connection;
 use rustc_serialize::json::Json;
 use tempfile::NamedTempFile;
+use url::percent_encoding;
 
 use json::JsonPathElement::{Key, Only};
 
@@ -124,6 +126,31 @@ fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
     }
 }
 
+fn render(wikitext: &str) -> Result<String, String> {
+    let post_body = format!(
+        "text={}", percent_encoding::percent_encode(
+            wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET));
+
+    let client = Client::new();
+    let mut res = client.post(
+        "https://en.wikipedia.org/w/api.php?action=parse&format=json&prop=text&disablepp=&contentmodel=wikitext")
+        .body(&post_body)
+        .header(Connection::close())
+        .send().unwrap();
+
+    let mut body = String::new();
+    res.read_to_string(&mut body).unwrap();
+
+    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    println!("{}", body);
+    // TODO: check return value
+    let json = Json::from_str(&body).unwrap();
+    match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
+        Ok(contents) => Ok(contents.to_string()),
+        Err(message) => Err(message),
+    }
+}
+
 fn main() {
     let latest_revid = get_latest_revision_id("Zachary_Taylor");
     let mut accumulated_contents = get_revision_content("Zachary_Taylor", latest_revid);
@@ -140,8 +167,13 @@ fn main() {
         }
     }
 
-    println!("Restored vandalisms reverted in: {:?}", revisions);
-    println!("{}", accumulated_contents);
+    match render(&accumulated_contents) {
+        Ok(contents) => {
+            println!("Restored vandalisms reverted in: {:?}", revisions);
+            println!("{}", contents);
+        },
+        Err(message) => panic!(message),
+    }
 }
 
 #[cfg(test)]

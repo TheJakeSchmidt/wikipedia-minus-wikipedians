@@ -5,6 +5,7 @@ dependencies = [
  "hyper 0.6.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempfile 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "url 0.2.36 (git+https://github.com/servo/rust-url)",
 ]
 
 [[package]]
@@ -228,6 +229,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "url"
 version = "0.2.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "matches 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustc-serialize 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "url"
+version = "0.2.36"
+source = "git+https://github.com/servo/rust-url#b32c7cc883c72fbc6e448a6ce881b74967c23ac3"
 dependencies = [
  "matches 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.15 (registry+https://github.com/rust-lang/crates.io-index)",
