@@ -126,27 +126,22 @@ fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
 
 fn main() {
     let latest_revid = get_latest_revision_id("Zachary_Taylor");
-    // TODO: this is disgusting.
-    let revision_ids = get_revert_revision_ids("Zachary_Taylor").ok().unwrap();
-    let processed_contents = revision_ids.into_iter().fold(
-        (get_revision_content("Zachary_Taylor", latest_revid), vec![]),
-        |accumulated_contents, revision_ids| {
-            let revert_revid = revision_ids.0;
-            let vandalism_revid = revision_ids.1;
-            match merge(&get_revision_content("Zachary_Taylor", revert_revid),
-                        &get_revision_content("Zachary_Taylor", vandalism_revid),
-                        &accumulated_contents.0) {
-                Some(merged_contents) => {
-                    let mut merged_revision_ids = accumulated_contents.1;
-                    merged_revision_ids.push(revert_revid);
-                    (merged_contents, merged_revision_ids)
-                }
-                None => accumulated_contents
+    let mut accumulated_contents = get_revision_content("Zachary_Taylor", latest_revid);
+    let mut revisions = vec![];
+    for (revert_revid, vandalism_revid) in get_revert_revision_ids("Zachary_Taylor").ok().unwrap() {
+        let reverted_contents = get_revision_content("Zachary_Taylor", revert_revid);
+        let vandalized_contents = get_revision_content("Zachary_Taylor", vandalism_revid);
+        match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
+            Some(merged_contents) => {
+                accumulated_contents = merged_contents;
+                revisions.push(revert_revid);
             }
-        });
+            None => (),
+        }
+    }
 
-    println!("Restored vandalisms reverted in: {:?}", processed_contents.1);
-    println!("{}", processed_contents.0);
+    println!("Restored vandalisms reverted in: {:?}", revisions);
+    println!("{}", accumulated_contents);
 }
 
 #[cfg(test)]
