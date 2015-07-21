@@ -1,6 +1,9 @@
+extern crate html5ever;
+extern crate html5ever_dom_sink;
 extern crate hyper;
 extern crate rustc_serialize;
 extern crate tempfile;
+extern crate tendril;
 extern crate url;
 
 mod json;
@@ -10,7 +13,13 @@ use std::io::Read;
 use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
+use std::str::FromStr;
 
+use html5ever::Attribute;
+use html5ever::tree_builder::interface::TreeSink;
+use html5ever_dom_sink::common::NodeEnum;
+use html5ever_dom_sink::rcdom::Handle;
+use html5ever_dom_sink::rcdom::RcDom;
 use hyper::Client;
 use hyper::header::Connection;
 use rustc_serialize::json::Json;
@@ -151,6 +160,56 @@ fn render(wikitext: &str) -> Result<String, String> {
     }
 }
 
+fn has_matching_id(attributes: &Vec<Attribute>, id: &str) -> bool {
+    // TODO: could also do this with filter() and is_empty(). Not sure if that would be better.
+    for attribute in attributes {
+        // TODO: do I seriously have to construct a StrTendril here?
+        // There has to be a better way.
+        if attribute.name.local.as_slice() == "id" &&
+            attribute.value == tendril::StrTendril::from_str(id).unwrap() {
+                return true;
+            }
+    }
+    return false;
+}
+
+fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
+    let node = handle.borrow();
+    match node.node {
+        NodeEnum::Element(_, ref attributes) if has_matching_id(attributes, id) => Ok(handle.clone()),
+        _ => {
+            for child in &node.children {
+                match find_node_by_id(child, id) {
+                    // TODO: this looks weird. Is this an abnormal way to do things?
+                    Ok(node) => return Ok(node),
+                    _ => continue,
+                }
+            }
+            Err(format!("No node with ID {} found", id))
+        },
+    }
+}
+
+fn process_html(original_html: &str, div_id: &str, replacement_text: &str) -> Result<String, String> {
+    // TODO: check errors
+    let html = tendril::StrTendril::from_str(original_html).unwrap();
+    let mut dom: RcDom = html5ever::parse(html5ever::one_input(html), Default::default());
+
+    let handle = try!(find_node_by_id(&dom.get_document(), "mw-content-text"));
+    let child_handles =
+        (&handle.borrow().children).into_iter().map(|child| child.clone()).collect::<Vec<_>>();
+    for child_handle in child_handles {
+        dom.remove_from_parent(child_handle);
+    }
+    dom.append(handle,
+               html5ever::tree_builder::interface::NodeOrText::AppendText(
+                   tendril::StrTendril::from_str(replacement_text).unwrap()));
+    let mut serialized: Vec<u8> = vec![];
+    html5ever::serialize::serialize(&mut serialized, &dom.document, Default::default());
+    // TODO: error handling
+    Ok(String::from_utf8(serialized).unwrap())
+}
+
 fn main() {
     let latest_revid = get_latest_revision_id("Zachary_Taylor");
     let mut accumulated_contents = get_revision_content("Zachary_Taylor", latest_revid);
@@ -178,7 +237,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge};
+    use super::{merge, process_html};
 
     #[test]
     fn test_merge_clean() {
@@ -202,5 +261,13 @@ mod tests {
         let new1 = "First line.\n\nSecond line 𐅃.\n";
         let new2 = "First line さようなら.\n\nSecond line.\n";
         assert_eq!("First line さようなら.\n\nSecond line 𐅃.\n", merge(old, new1, new2).unwrap());
+    }
+
+    #[test]
+    fn test_replace_html_content() {
+        let original_html = "<html><head></head><body><div id=\"content\"><div id=\"bodyContent\"><div id=\"mw-content-text\"><p>original text</p></div><div>Other text</div></div></div></body></html>";
+        let expected_html = "<html><head></head><body><div id=\"content\"><div id=\"bodyContent\"><div id=\"mw-content-text\">replaced text</div><div>Other text</div></div></div></body></html>";
+        let processed_html = process_html(original_html, "mw-content-text", "replaced text").unwrap();
+        assert_eq!(expected_html, processed_html);
     }
 }
