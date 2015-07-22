@@ -35,46 +35,13 @@ use json::JsonPathElement::{Key, Only};
 // TODO: Can I get rid of the repeated "Zachary_Taylor"s everywhere? Surely the MediaWiki API doesn't actually need that - I can't imagine revision IDs aren't unique across all pages.
 
 // TODO: return a Result
-//fn call_wikimedia_api(action: &str, prop: &str, Vec<(&str, &str)> parameters) -> String {
-//    let client = Client::new();
-//    let mut res = client.get(
-//        &format!(
-//            "https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles={}&rvprop={}&rvlimit={}{}&format=json",
-//            page, properties.join("|"), limit,
-//            match start_id { Some(id) => format!("&rvstartid={}", id), None => "".to_string()}))
-//        .header(Connection::close())
-//        .send().unwrap();
-//
-//    let mut body = String::new();
-//    res.read_to_string(&mut body).unwrap();
-//
-//    body
-//}
-
-fn get_revisions(page: &str, limit: i32, properties: Vec<&str>, start_id: Option<u64>) -> String {
-    let client = Client::new();
-    let mut res = client.post(
-        &format!(
-            "https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles={}&rvprop={}&rvlimit={}{}&format=json",
-            page, properties.join("|"), limit,
-            match start_id { Some(id) => format!("&rvstartid={}", id), None => "".to_string()}))
-        .header(Connection::close())
-        .send().unwrap();
-
-    let mut body = String::new();
-    res.read_to_string(&mut body).unwrap();
-
-    body
-}
-
-fn parse_wikitext(wikitext: &str) -> String {
-    let post_body = format!(
-        "text={}", percent_encoding::percent_encode(
-            wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET));
+fn call_wikimedia_api(parameters: Vec<(&str, &str)>) -> String {
+    let post_body =
+        parameters.into_iter().map(|p| format!("{}={}", p.0, p.1))
+        .collect::<Vec<_>>().join("&") + "&format=json";
 
     let client = Client::new();
-    let mut res = client.post(
-        "https://en.wikipedia.org/w/api.php?action=parse&format=json&prop=text&disablepp=&contentmodel=wikitext")
+    let mut res = client.post("https://en.wikipedia.org/w/api.php")
         .body(&post_body)
         .header(Connection::close())
         .send().unwrap();
@@ -87,7 +54,11 @@ fn parse_wikitext(wikitext: &str) -> String {
 // TODO: this name is terrible.
 // Returns pairs of (revid, parentid)
 fn get_revert_revision_ids(page: &str) -> Result<Vec<(u64, u64)>, String> {
-    let json = Json::from_str(&get_revisions(page, 60, vec!["comment", "ids"], None)).unwrap();
+    let json_str = call_wikimedia_api(
+        vec![("action", "query"), ("prop", "revisions"), ("titles", page),
+             ("rvprop", "comment|ids"), ("rvlimit", "60")]);
+
+    let json = Json::from_str(&json_str).unwrap();
     let revisions = try!(
         json::get_json_array(&json, &[Key("query"), Key("pages"), Only, Key("revisions")]));
 
@@ -107,13 +78,19 @@ fn get_revert_revision_ids(page: &str) -> Result<Vec<(u64, u64)>, String> {
 }
 
 fn get_latest_revision_id(page: &str) -> Result<u64, String> {
-    let json = Json::from_str(&get_revisions(page, 1, vec!["ids"], None)).unwrap();
+    let json_str = call_wikimedia_api(
+        vec![("action", "query"), ("prop", "revisions"), ("titles", page), ("rvprop", "ids"),
+             ("rvlimit", "1")]);
+    let json = Json::from_str(&json_str).unwrap();
     json::get_json_number(
         &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("revid")])
 }
 
 fn get_revision_content(page: &str, id: u64) -> Result<String, String> {
-    let json = Json::from_str(&get_revisions(page, 1, vec!["content"], Some(id))).unwrap();
+    let json_str = call_wikimedia_api(
+        vec![("action", "query"), ("prop", "revisions"), ("titles", page), ("rvprop", "content"),
+             ("rvlimit", "1"), ("rvstartid", &id.to_string())]);
+    let json = Json::from_str(&json_str).unwrap();
     match json::get_json_string(
         &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")]) {
         Ok(content) => Ok(content.to_string()),
@@ -147,7 +124,11 @@ fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
 }
 
 fn render(wikitext: &str) -> Result<String, String> {
-    let html = parse_wikitext(wikitext);
+    let encoded_wikitext =
+        percent_encoding::percent_encode(wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET);
+    let html = call_wikimedia_api(
+        vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
+             ("text", &encoded_wikitext)]);
     // TODO: check return value
     let json = Json::from_str(&html).unwrap();
     match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
