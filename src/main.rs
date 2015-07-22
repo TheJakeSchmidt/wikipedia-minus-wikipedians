@@ -50,6 +50,23 @@ fn get_revisions(page: &str, limit: i32, properties: Vec<&str>, start_id: Option
     body
 }
 
+fn parse_wikitext(wikitext: &str) -> String {
+    let post_body = format!(
+        "text={}", percent_encoding::percent_encode(
+            wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET));
+
+    let client = Client::new();
+    let mut res = client.post(
+        "https://en.wikipedia.org/w/api.php?action=parse&format=json&prop=text&disablepp=&contentmodel=wikitext")
+        .body(&post_body)
+        .header(Connection::close())
+        .send().unwrap();
+
+    let mut body = String::new();
+    res.read_to_string(&mut body).unwrap();
+    body
+}
+
 // TODO: this name is terrible.
 // Returns pairs of (revid, parentid)
 fn get_revert_revision_ids(page: &str) -> Result<Vec<(u64, u64)>, String> {
@@ -113,22 +130,9 @@ fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
 }
 
 fn render(wikitext: &str) -> Result<String, String> {
-    let post_body = format!(
-        "text={}", percent_encoding::percent_encode(
-            wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET));
-
-    let client = Client::new();
-    let mut res = client.post(
-        "https://en.wikipedia.org/w/api.php?action=parse&format=json&prop=text&disablepp=&contentmodel=wikitext")
-        .body(&post_body)
-        .header(Connection::close())
-        .send().unwrap();
-
-    let mut body = String::new();
-    res.read_to_string(&mut body).unwrap();
-
+    let html = parse_wikitext(wikitext);
     // TODO: check return value
-    let json = Json::from_str(&body).unwrap();
+    let json = Json::from_str(&html).unwrap();
     match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
         Ok(contents) => Ok(contents.to_string()),
         Err(message) => Err(message),
