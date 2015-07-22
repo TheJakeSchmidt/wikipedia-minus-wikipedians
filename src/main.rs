@@ -34,12 +34,13 @@ use json::JsonPathElement::{Key, Only};
 
 // TODO: Can I get rid of the repeated "Zachary_Taylor"s everywhere? Surely the MediaWiki API doesn't actually need that - I can't imagine revision IDs aren't unique across all pages.
 
-fn get_revisions(page: &str, limit: i32) -> String {
+fn get_revisions(page: &str, limit: i32, properties: Vec<&str>, start_id: Option<u64>) -> String {
     let client = Client::new();
     let mut res = client.get(
         &format!(
-            "https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles={}&rvprop=timestamp|user|comment|ids&rvlimit={}&format=json",
-            page, limit))
+            "https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles={}&rvprop={}&rvlimit={}{}&format=json",
+            page, properties.join("|"), limit,
+            match start_id { Some(id) => format!("&rvstartid={}", id), None => "".to_string()}))
         .header(Connection::close())
         .send().unwrap();
 
@@ -52,7 +53,7 @@ fn get_revisions(page: &str, limit: i32) -> String {
 // TODO: this name is terrible.
 // Returns pairs of (revid, parentid)
 fn get_revert_revision_ids(page: &str) -> Result<Vec<(u64, u64)>, String> {
-    let json = Json::from_str(&get_revisions(page, 60)).unwrap();
+    let json = Json::from_str(&get_revisions(page, 60, vec!["comment", "ids"], None)).unwrap();
     let revisions = try!(
         json::get_json_array(&json, &[Key("query"), Key("pages"), Only, Key("revisions")]));
 
@@ -72,27 +73,13 @@ fn get_revert_revision_ids(page: &str) -> Result<Vec<(u64, u64)>, String> {
 }
 
 fn get_latest_revision_id(page: &str) -> Result<u64, String> {
-    let json = Json::from_str(&get_revisions(page, 1)).unwrap();
+    let json = Json::from_str(&get_revisions(page, 1, vec!["ids"], None)).unwrap();
     json::get_json_number(
         &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("revid")])
 }
 
-fn get_revision(page: &str, id: u64) -> String {
-    let client = Client::new();
-    let mut res = client.get(
-        &format!(
-            "https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles={}&rvprop=content&rvlimit=1&rvstartid={}&format=json",
-            page, id))
-        .header(Connection::close())
-        .send().unwrap();
-
-    let mut body = String::new();
-    res.read_to_string(&mut body).unwrap();
-    body
-}
-
 fn get_revision_content(page: &str, id: u64) -> Result<String, String> {
-    let json = Json::from_str(&get_revision(page, id)).unwrap();
+    let json = Json::from_str(&get_revisions(page, 1, vec!["content"], Some(id))).unwrap();
     match json::get_json_string(
         &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")]) {
         Ok(content) => Ok(content.to_string()),
