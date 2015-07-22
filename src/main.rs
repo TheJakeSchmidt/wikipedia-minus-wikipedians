@@ -34,9 +34,26 @@ use json::JsonPathElement::{Key, Only};
 
 // TODO: Can I get rid of the repeated "Zachary_Taylor"s everywhere? Surely the MediaWiki API doesn't actually need that - I can't imagine revision IDs aren't unique across all pages.
 
+// TODO: return a Result
+//fn call_wikimedia_api(action: &str, prop: &str, Vec<(&str, &str)> parameters) -> String {
+//    let client = Client::new();
+//    let mut res = client.get(
+//        &format!(
+//            "https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles={}&rvprop={}&rvlimit={}{}&format=json",
+//            page, properties.join("|"), limit,
+//            match start_id { Some(id) => format!("&rvstartid={}", id), None => "".to_string()}))
+//        .header(Connection::close())
+//        .send().unwrap();
+//
+//    let mut body = String::new();
+//    res.read_to_string(&mut body).unwrap();
+//
+//    body
+//}
+
 fn get_revisions(page: &str, limit: i32, properties: Vec<&str>, start_id: Option<u64>) -> String {
     let client = Client::new();
-    let mut res = client.get(
+    let mut res = client.post(
         &format!(
             "https://en.wikipedia.org/w/api.php?action=query&prop=revisions&titles={}&rvprop={}&rvlimit={}{}&format=json",
             page, properties.join("|"), limit,
