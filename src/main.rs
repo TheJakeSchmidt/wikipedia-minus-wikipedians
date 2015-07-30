@@ -51,6 +51,7 @@ fn call_wikimedia_api(parameters: Vec<(&str, &str)>) -> String {
         .collect::<Vec<_>>().join("&") + "&format=json";
 
     let client = Client::new();
+    // TODO: rename to "response".
     let mut res = client.post("https://en.wikipedia.org/w/api.php")
         .body(&post_body)
         .header(Connection::close())
@@ -250,8 +251,21 @@ fn serve_request(request: &mut Request) -> IronResult<Response> {
         response.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
         Ok(response)
     } else {
-        println!("Would forward request for {} to en.wikipedia.org", request.url.path.join("/"));
-        Ok(Response::with((iron::status::Ok, "Would forward to en.wikipedia.org")))
+        let client = Client::new();
+        // TODO: error handling
+        let mut wikipedia_response =
+            client.get(&format!("https://en.wikipedia.org/{}", request.url.path.join("/")))
+            .header(Connection::close())
+            .send().unwrap();
+        let mut wikipedia_body: Vec<u8> = Vec::new();
+        wikipedia_response.read_to_end(&mut wikipedia_body);
+
+        let mut response = Response::with(wikipedia_body);
+        response.status = Some(wikipedia_response.status);
+        response.headers = wikipedia_response.headers.clone();
+        //response.body = wikipedia_body;
+        println!("Forwarded request for {} to en.wikipedia.org", request.url.path.join("/"));
+        Ok(response)
     }
 }
 
