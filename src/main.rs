@@ -1,6 +1,7 @@
 extern crate html5ever;
 extern crate html5ever_dom_sink;
 extern crate hyper;
+extern crate iron;
 extern crate rustc_serialize;
 extern crate tempfile;
 extern crate tendril;
@@ -22,17 +23,26 @@ use html5ever_dom_sink::rcdom::Handle;
 use html5ever_dom_sink::rcdom::RcDom;
 use hyper::Client;
 use hyper::header::Connection;
+use iron::Iron;
+use iron::IronResult;
+use iron::Request;
+use iron::Response;
+use iron::headers::ContentType;
+use iron::mime::Mime;
+use iron::mime::SubLevel;
+use iron::mime::TopLevel;
 use rustc_serialize::json::Json;
 use tempfile::NamedTempFile;
 use url::percent_encoding;
 
 use json::JsonPathElement::{Key, Only};
 
+// TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
+// currently works fine, but might not over HTTPS.
+// TODO: Do nested functions work? If so, use those where appropriate.
 // TODO: there are some places where I've handrolled try!() equivalents. Fix those.
-// TODO: make sure I'm returning Results everywhere, and propagating errors correctly.
-// TODO: randomize placeholder per-request
-
-// TODO: Can I get rid of the repeated "Zachary_Taylor"s everywhere? Surely the MediaWiki API doesn't actually need that - I can't imagine revision IDs aren't unique across all pages.
+// TODO: make sure I'm returning Results everywhere, and propagating errors correctly. Remove all
+// uses of unwrap() that might panic.
 
 // TODO: return a Result
 fn call_wikimedia_api(parameters: Vec<(&str, &str)>) -> String {
@@ -200,15 +210,20 @@ fn get_current_page(page: &str) -> String {
     body
 }
 
-fn main() {
-    let latest_revid = get_latest_revision_id("Zachary_Taylor").unwrap();
-    let mut accumulated_contents = get_revision_content("Zachary_Taylor", latest_revid).unwrap();
+// TODO: this name is terrible.
+fn get_page_with_vandalism_restored(page: &str) -> Result<String, String> {
+    let latest_revid = get_latest_revision_id(page).unwrap();
+    let mut accumulated_contents = get_revision_content(page, latest_revid).unwrap();
     let mut revisions = vec![];
-    for (revert_revid, vandalism_revid) in get_revert_revision_ids("Zachary_Taylor").ok().unwrap() {
-        let reverted_contents = get_revision_content("Zachary_Taylor", revert_revid).unwrap();
-        let vandalized_contents = get_revision_content("Zachary_Taylor", vandalism_revid).unwrap();
+    for (revert_revid, vandalism_revid) in get_revert_revision_ids(page).ok().unwrap() {
+        let reverted_contents = get_revision_content(page, revert_revid).unwrap();
+        let vandalized_contents = get_revision_content(page, vandalism_revid).unwrap();
         match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
             Some(merged_contents) => {
+                // TODO: replace this with a log statement, if there's a good logging framework.
+                println!(
+                    "For page \"{}\", restored vandalism https://en.wikipedia.org/w/index.php?title=Zachary_Taylor&diff=prev&oldid={}",
+                         page, revert_revid);
                 accumulated_contents = merged_contents;
                 revisions.push(revert_revid);
             }
@@ -216,15 +231,32 @@ fn main() {
         }
     }
 
+    // TODO: replace this with a log statement, if there's a good logging framework.
+    println!("For page \"{}\", restored vandalisms reverted in: {:?}", page, revisions);
+
     let rendered_body = render(&accumulated_contents).unwrap();
-    let current_page_contents = get_current_page("Zachary_Taylor");
+    let current_page_contents = get_current_page(page);
+    // TODO: randomize the placeholder string per-request
     let page_contents_with_placeholder =
         replace_node_with_placeholder(
             &current_page_contents, "mw-content-text", "WMW_PLACEHOLDER_TEXT").unwrap();
-    let final_page_contents = page_contents_with_placeholder.replace("WMW_PLACEHOLDER_TEXT", &rendered_body);
+    Ok(page_contents_with_placeholder.replace("WMW_PLACEHOLDER_TEXT", &rendered_body))
+}
 
-    println!("Restored vandalisms reverted in: {:?}", revisions);
-    println!("{}", final_page_contents);
+fn serve_request(request: &mut Request) -> IronResult<Response> {
+    if request.url.path.len() == 2 && request.url.path[0] == "wiki" {
+        let mut response = Response::with(
+            (iron::status::Ok, get_page_with_vandalism_restored(&request.url.path[1]).unwrap()));
+        response.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+        Ok(response)
+    } else {
+        println!("Would forward request for {} to en.wikipedia.org", request.url.path.join("/"));
+        Ok(Response::with((iron::status::Ok, "Would forward to en.wikipedia.org")))
+    }
+}
+
+fn main() {
+    Iron::new(serve_request).http("localhost:3000").unwrap();
 }
 
 #[cfg(test)]
