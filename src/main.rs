@@ -288,7 +288,6 @@ fn serve_request(request: &mut Request) -> IronResult<Response> {
         let mut response = Response::with(wikipedia_body);
         response.status = Some(wikipedia_response.status);
         response.headers = wikipedia_response.headers.clone();
-        //response.body = wikipedia_body;
         println!("Forwarded request for {} to en.wikipedia.org", request.url.path.join("/"));
         Ok(response)
     }
