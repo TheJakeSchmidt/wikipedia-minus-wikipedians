@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["jakeschmidt"]
 
 [dependencies]
+argparse = "*"
 html5ever = "*"
 html5ever_dom_sink = "*"
 hyper = "*"

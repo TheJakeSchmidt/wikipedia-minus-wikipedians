@@ -1,6 +1,7 @@
 #![feature(plugin)]
 #![plugin(regex_macros)]
 
+extern crate argparse;
 extern crate html5ever;
 extern crate html5ever_dom_sink;
 extern crate hyper;
@@ -13,6 +14,8 @@ extern crate url;
 
 mod json;
 
+use argparse::ArgumentParser;
+use argparse::Store;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
@@ -47,6 +50,7 @@ use json::JsonPathElement::{Key, Only};
 // TODO: there are some places where I've handrolled try!() equivalents. Fix those.
 // TODO: make sure I'm returning Results everywhere, and propagating errors correctly. Remove all
 // uses of unwrap() that might panic.
+// TODO: The page "Battle_of_Palo_Alto" is truncated. Figure out the best way to debug.
 
 // TODO: return a Result
 fn call_wikimedia_api(parameters: Vec<(&str, &str)>) -> String {
@@ -292,7 +296,14 @@ fn serve_request(request: &mut Request) -> IronResult<Response> {
 }
 
 fn main() {
-    Iron::new(serve_request).http("localhost:3000").unwrap();
+    let mut port = 3000;
+    {
+        let mut parser = ArgumentParser::new();
+        parser.set_description("TODO: Usage description");
+        parser.refer(&mut port).add_option(&["-p", "--port"], Store, "The port to serve HTTP on.");
+        parser.parse_args_or_exit();
+    }
+    Iron::new(serve_request).http(("localhost", port)).unwrap();
 }
 
 #[cfg(test)]
