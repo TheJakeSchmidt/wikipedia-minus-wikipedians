@@ -35,6 +35,7 @@ use iron::IronResult;
 use iron::Request;
 use iron::Response;
 use iron::headers::ContentType;
+use iron::middleware::Handler;
 use iron::mime::Mime;
 use iron::mime::SubLevel;
 use iron::mime::TopLevel;
@@ -51,85 +52,143 @@ use json::JsonPathElement::{Key, Only};
 // uses of unwrap() that might panic.
 // TODO: The page "Battle_of_Palo_Alto" is truncated. Figure out the best way to debug.
 
-// TODO: return a Result
-fn call_wikimedia_api(parameters: Vec<(&str, &str)>) -> String {
-    let post_body =
-        parameters.into_iter().map(|p| format!("{}={}", p.0, p.1))
-        .collect::<Vec<_>>().join("&") + "&format=json";
-
-    let client = Client::new();
-    let mut response = client.post("https://en.wikipedia.org/w/api.php")
-        .body(&post_body)
-        .header(Connection::close())
-        .send().unwrap();
-
-    let mut body = String::new();
-    response.read_to_string(&mut body).unwrap();
-    body
+// TODO: move all the Wikipedia code to a separate module. If possible, remove json dependency from
+// this module entirely.
+struct Wiki {
+    hostname: String,
 }
 
-// TODO: this name is terrible.
-// Returns pairs of (revid, parentid)
-fn get_revert_revision_ids(title: &str) -> Result<Vec<(u64, u64)>, String> {
-    let json_str = call_wikimedia_api(
-        vec![("action", "query"), ("prop", "revisions"), ("titles", title),
-             ("rvprop", "comment|ids"), ("rvlimit", "60")]);
-
-    let json = Json::from_str(&json_str).unwrap();
-    let revisions = try!(
-        json::get_json_array(&json, &[Key("query"), Key("pages"), Only, Key("revisions")]));
-
-    // Filter for revisions that mention vandalism, and that have revid and parentid (which they all
-    // should, but merits checking).
-    Ok(revisions.into_iter().filter(|revision| {
-        match (json::get_json_string(revision, &[Key("comment")]),
-               json::get_json_number(revision, &[Key("revid")]),
-               json::get_json_number(revision, &[Key("parentid")])) {
-            (Ok(ref comment), Ok(_), Ok(_)) => comment.contains("vandal"),
-            _ => false,
-        }})
-       .map(|revision| {
-           (json::get_json_number(revision, &[Key("revid")]).unwrap(),
-            json::get_json_number(revision, &[Key("parentid")]).unwrap())
-       }).collect())
+struct Revision {
+    revid: u64,
+    parentid: u64,
+    comment: String,
 }
 
-fn get_latest_revision_id(title: &str) -> Result<u64, String> {
-    let json_str = call_wikimedia_api(
-        vec![("action", "query"), ("prop", "revisions"), ("titles", title), ("rvprop", "ids"),
-             ("rvlimit", "1")]);
-    let json = Json::from_str(&json_str).unwrap();
-    json::get_json_number(
-        &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("revid")])
-}
-
-fn get_revision_content(title: &str, id: u64) -> Result<String, String> {
-    let json_str = call_wikimedia_api(
-        vec![("action", "query"), ("prop", "revisions"), ("titles", title), ("rvprop", "content"),
-             ("rvlimit", "1"), ("rvstartid", &id.to_string())]);
-    let json = Json::from_str(&json_str).unwrap();
-    match json::get_json_string(
-        &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")]) {
-        Ok(content) => Ok(content.to_string()),
-        Err(msg) => Err(msg),
+impl Wiki {
+    /// Constructs a Wiki object representing the wiki at `hostname` (e.g. "en.wikipedia.org").
+    pub fn new(hostname: &str) -> Wiki {
+        Wiki { hostname: hostname.to_string() }
     }
-}
 
-fn get_canonical_title(title: &str) -> Result<String, String> {
-    let latest_revision_id = get_latest_revision_id(title).unwrap();
-    let page_contents = get_revision_content(title, latest_revision_id).unwrap();
+    // TODO: return a Result
+    /// Calls the MediaWiki API with the given parameters and format=json. Returns the raw JSON.
+    fn call_mediawiki_api(&self, parameters: Vec<(&str, &str)>) -> String {
+        let post_body =
+            parameters.into_iter().map(|p| format!("{}={}", p.0, p.1))
+            .collect::<Vec<_>>().join("&") + "&format=json";
 
-    let regex = regex!(r"#REDIRECT \[\[([^]]+)\]\].*");
-    match regex.captures(&page_contents) {
-        Some(captures) => get_canonical_title(captures.at(1).unwrap()),
-        None => {
-            println!("Canonical page title is \"{}\"", title);
-            Ok(title.to_string())
-        },
+        let client = Client::new();
+        let mut response = client.post(&format!("https://{}/w/api.php", self.hostname))
+            .body(&post_body)
+            .header(Connection::close())
+            .send().unwrap();
+
+        let mut body = String::new();
+        response.read_to_string(&mut body).unwrap();
+        body
+    }
+
+    /// Returns the last `limit` revisions for the page `title`.
+    pub fn get_revision_ids(&self, title: &str, limit: u64) -> Result<Vec<Revision>, String> {
+        let json_str = self.call_mediawiki_api(
+            vec![("action", "query"), ("prop", "revisions"), ("titles", title),
+                 ("rvprop", "comment|ids"), ("rvlimit", &limit.to_string())]);
+        let json = Json::from_str(&json_str).unwrap();
+        let revisions = try!(
+            json::get_json_array(&json, &[Key("query"), Key("pages"), Only, Key("revisions")]));
+
+        // Check that  all revisions have revid and parentid (they all should).
+        // TODO: what about making a Vec<Result<Revision>, String> and then rolling that up with a fold()? Would eliminate the repetition of the get_json_* calls.
+        if revisions.into_iter().any(|revision| {
+            json::get_json_number(revision, &[Key("revid")]).is_err() ||
+            json::get_json_number(revision, &[Key("parentid")]).is_err() ||
+            json::get_json_string(revision, &[Key("comment")]).is_err()
+        }) {
+            Err(format!(
+                "One or more revisions of page \"{}\" have missing or invalid field", title))
+        } else {
+            Ok(revisions.into_iter().map(|revision| {
+                Revision {
+                    revid: json::get_json_number(revision, &[Key("revid")]).unwrap(),
+                    parentid: json::get_json_number(revision, &[Key("parentid")]).unwrap(),
+                    comment: json::get_json_string(revision, &[Key("comment")]).unwrap().to_string()
+                }
+            }).collect())
+        }
+    }
+
+    /// Returns the latest revision ID for the page `title`.
+    pub fn get_latest_revision_id(&self, title: &str) -> Result<u64, String> {
+        // TODO: Can this be a one-liner? Does try!() work properly like that?
+        let revisions = try!(self.get_revision_ids(title, 1));
+        Ok(revisions[0].revid)
+    }
+
+    /// Returns the contents of the page `title` as of (i.e., immediately after) revision `id`.
+    pub fn get_revision_content(&self, title: &str, id: u64) -> Result<String, String> {
+        let json_str = self.call_mediawiki_api(
+            vec![("action", "query"), ("prop", "revisions"), ("titles", title), ("rvprop", "content"),
+                 ("rvlimit", "1"), ("rvstartid", &id.to_string())]);
+        let json = Json::from_str(&json_str).unwrap();
+        match json::get_json_string(
+            &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")]) {
+            Ok(content) => Ok(content.to_string()),
+            Err(msg) => Err(msg),
+        }
+    }
+
+    /// Follows all redirects to find the canonical name of the page at `title`.
+    pub fn get_canonical_title(&self, title: &str) -> Result<String, String> {
+        let latest_revision_id = self.get_latest_revision_id(title).unwrap();
+        let page_contents = self.get_revision_content(title, latest_revision_id).unwrap();
+
+        let regex = regex!(r"#REDIRECT \[\[([^]]+)\]\].*");
+        match regex.captures(&page_contents) {
+            Some(captures) => self.get_canonical_title(captures.at(1).unwrap()),
+            None => {
+                println!("Canonical page title is \"{}\"", title);
+                Ok(title.to_string())
+            },
+        }
+    }
+
+    /// Parses the wikitext in `wikitext` as though it were the contents of the page `title`,
+    /// returning the rendered HTML.
+    pub fn parse_wikitext(&self, title: &str, wikitext: &str) -> Result<String, String> {
+        let encoded_wikitext =
+            percent_encoding::percent_encode(wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET);
+        let html = self.call_mediawiki_api(
+            vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
+                 ("title", title), ("text", &encoded_wikitext)]);
+        // TODO: check return value
+        let json = Json::from_str(&html).unwrap();
+        match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
+            Ok(contents) => Ok(contents.to_string()),
+            Err(message) => Err(message),
+        }
+    }
+
+    /// Gets the current, fully-rendered (**HTML**) contents of the page `title`.
+    pub fn get_current_page_content(title: &str) -> String {
+        // TODO: should this struct be keeping a Client instead of creating new ones for each method
+        // call, here and in call_mediawiki_api?
+        let client = Client::new();
+        let mut res = client.get(
+            &format!("https://en.wikipedia.org/wiki/{}", title))
+            .header(Connection::close())
+            .send().unwrap();
+
+        let mut body = String::new();
+        res.read_to_string(&mut body).unwrap();
+
+        body
     }
 }
 
 // TODO: I'm not so sure these parameter names aren't terrible.
+// TODO: would Result make more sense than Option for this return value?
+/// Does a 3-way merge, merging `new1` and `new2` under the assumption that both diverged from
+/// `old`. Returns None if the strings do not merge together cleanly.
 fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
     fn write_to_temp_file(contents: &str) -> NamedTempFile {
         let tempfile = NamedTempFile::new().unwrap();
@@ -154,18 +213,25 @@ fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
     }
 }
 
-fn render(title: &str, wikitext: &str) -> Result<String, String> {
-    let encoded_wikitext =
-        percent_encoding::percent_encode(wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET);
-    let html = call_wikimedia_api(
-        vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
-             ("title", title), ("text", &encoded_wikitext)]);
-    // TODO: check return value
-    let json = Json::from_str(&html).unwrap();
-    match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
-        Ok(contents) => Ok(contents.to_string()),
-        Err(message) => Err(message),
+fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder: &str)
+    -> Result<String, String> {
+    // TODO: check errors
+    let html = tendril::StrTendril::from_str(original_html).unwrap();
+    let mut dom: RcDom = html5ever::parse(html5ever::one_input(html), Default::default());
+
+    let handle = try!(find_node_by_id(&dom.get_document(), div_id));
+    let child_handles =
+        (&handle.borrow().children).into_iter().map(|child| child.clone()).collect::<Vec<_>>();
+    for child_handle in child_handles {
+        dom.remove_from_parent(child_handle);
     }
+    dom.append(handle,
+               html5ever::tree_builder::interface::NodeOrText::AppendText(
+                   tendril::StrTendril::from_str(placeholder).unwrap()));
+    let mut serialized: Vec<u8> = vec![];
+    html5ever::serialize::serialize(&mut serialized, &dom.document, Default::default());
+    // TODO: error handling
+    Ok(String::from_utf8(serialized).unwrap())
 }
 
 fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
@@ -198,97 +264,87 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
     }
 }
 
-fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder: &str) -> Result<String, String> {
-    // TODO: check errors
-    let html = tendril::StrTendril::from_str(original_html).unwrap();
-    let mut dom: RcDom = html5ever::parse(html5ever::one_input(html), Default::default());
+// TODO: rename?
+struct WikipediaWithoutWikipedians {
+    wiki: Wiki,
+}
 
-    let handle = try!(find_node_by_id(&dom.get_document(), div_id));
-    let child_handles =
-        (&handle.borrow().children).into_iter().map(|child| child.clone()).collect::<Vec<_>>();
-    for child_handle in child_handles {
-        dom.remove_from_parent(child_handle);
+impl WikipediaWithoutWikipedians {
+    fn new(wiki: Wiki) -> WikipediaWithoutWikipedians {
+        WikipediaWithoutWikipedians { wiki: wiki }
     }
-    dom.append(handle,
-               html5ever::tree_builder::interface::NodeOrText::AppendText(
-                   tendril::StrTendril::from_str(placeholder).unwrap()));
-    let mut serialized: Vec<u8> = vec![];
-    html5ever::serialize::serialize(&mut serialized, &dom.document, Default::default());
-    // TODO: error handling
-    Ok(String::from_utf8(serialized).unwrap())
-}
 
-fn get_current_page(title: &str) -> String {
-    let client = Client::new();
-    let mut res = client.get(
-        &format!("https://en.wikipedia.org/wiki/{}", title))
-        .header(Connection::close())
-        .send().unwrap();
+    /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
+    fn get_vandalism_reversions(&self, title: &str) -> Result<Vec<Revision>, String> {
+        let revisions = try!(self.wiki.get_revision_ids(title, 60));
+        Ok(revisions.into_iter().filter(|revision| revision.comment.contains("vandal")).collect())
+    }
 
-    let mut body = String::new();
-    res.read_to_string(&mut body).unwrap();
+    // TODO: this name is terrible.
+    fn get_page_with_vandalism_restored(&self, title: &str) -> Result<String, String> {
+        let canonical_title = self.wiki.get_canonical_title(title).unwrap();
 
-    body
-}
-
-// TODO: this name is terrible.
-fn get_page_with_vandalism_restored(title: &str) -> Result<String, String> {
-    let canonicalized_title = get_canonical_title(title).unwrap();
-
-    let latest_revid = get_latest_revision_id(&canonicalized_title).unwrap();
-    let mut accumulated_contents = get_revision_content(&canonicalized_title, latest_revid).unwrap();
-    let mut revisions = vec![];
-    for (revert_revid, vandalism_revid) in get_revert_revision_ids(&canonicalized_title).ok().unwrap() {
-        let reverted_contents = get_revision_content(&canonicalized_title, revert_revid).unwrap();
-        let vandalized_contents = get_revision_content(&canonicalized_title, vandalism_revid).unwrap();
-        match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
-            Some(merged_contents) => {
-                // TODO: replace this with a log statement, if there's a good logging framework.
-                println!(
-                    "For page \"{}\", restored vandalism https://en.wikipedia.org/w/index.php?title={}&diff=prev&oldid={}",
-                         &title, &canonicalized_title, revert_revid);
-                accumulated_contents = merged_contents;
-                revisions.push(revert_revid);
+        let latest_revid = self.wiki.get_latest_revision_id(&canonical_title).unwrap();
+        let mut accumulated_contents =
+            self.wiki.get_revision_content(&canonical_title, latest_revid).unwrap();
+        let mut revisions = vec![];
+        for revision in self.get_vandalism_reversions(&canonical_title).ok().unwrap() {
+            let reverted_contents =
+                self.wiki.get_revision_content(&canonical_title, revision.revid).unwrap();
+            let vandalized_contents =
+                self.wiki.get_revision_content(&canonical_title, revision.parentid).unwrap();
+            match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
+                Some(merged_contents) => {
+                    // TODO: replace this with a log statement, if there's a good logging framework.
+                    println!(
+                        "For page \"{}\", restored vandalism https://en.wikipedia.org/w/index.php?title={}&diff=prev&oldid={}",
+                        &title, &canonical_title, revision.revid);
+                    accumulated_contents = merged_contents;
+                    revisions.push(revision.revid);
+                }
+                None => (),
             }
-            None => (),
         }
+
+        // TODO: replace this with a log statement, if there's a good logging framework.
+        println!("For page \"{}\", restored vandalisms reverted in: {:?}", &title, revisions);
+
+        let body = self.wiki.parse_wikitext(title, &accumulated_contents).unwrap();
+        // Note: "title" rather than "canonical_title", so that redirects look right.
+        let current_page_contents = Wiki::get_current_page_content(&title);
+        // TODO: randomize the placeholder string per-request
+        let page_contents_with_placeholder =
+            replace_node_with_placeholder(
+                &current_page_contents, "mw-content-text", "WMW_PLACEHOLDER_TEXT").unwrap();
+        Ok(page_contents_with_placeholder.replace("WMW_PLACEHOLDER_TEXT", &body))
     }
-
-    // TODO: replace this with a log statement, if there's a good logging framework.
-    println!("For page \"{}\", restored vandalisms reverted in: {:?}", &title, revisions);
-
-    let rendered_body = render(title, &accumulated_contents).unwrap();
-    // Note: "title" rather than "canonicalized_title", so that redirects look right.
-    let current_page_contents = get_current_page(&title);
-    // TODO: randomize the placeholder string per-request
-    let page_contents_with_placeholder =
-        replace_node_with_placeholder(
-            &current_page_contents, "mw-content-text", "WMW_PLACEHOLDER_TEXT").unwrap();
-    Ok(page_contents_with_placeholder.replace("WMW_PLACEHOLDER_TEXT", &rendered_body))
 }
 
-fn serve_request(request: &mut Request) -> IronResult<Response> {
-    if request.url.path.len() == 2 && request.url.path[0] == "wiki" {
-        let mut response = Response::with(
-            (iron::status::Ok, get_page_with_vandalism_restored(&request.url.path[1]).unwrap()));
-        response.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
-        Ok(response)
-    } else {
-        let client = Client::new();
-        // TODO: error handling
-        let mut wikipedia_response =
-            // TODO: not good enough. Needs to include query string.
-            client.get(&format!("https://en.wikipedia.org/{}", request.url.path.join("/")))
-            .header(Connection::close())
-            .send().unwrap();
-        let mut wikipedia_body: Vec<u8> = Vec::new();
-        wikipedia_response.read_to_end(&mut wikipedia_body);
+impl Handler for WikipediaWithoutWikipedians {
+    fn handle(&self, request: &mut Request) -> IronResult<Response> {
+        if request.url.path.len() == 2 && request.url.path[0] == "wiki" {
+            let mut response = Response::with(
+                (iron::status::Ok,
+                 self.get_page_with_vandalism_restored(&request.url.path[1]).unwrap()));
+            response.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+            Ok(response)
+        } else {
+            let client = Client::new();
+            // TODO: error handling
+            let mut wikipedia_response =
+                // TODO: not good enough. Needs to include query string. Needs to use hostname instead of always en.wikipedia.org. Maybe should be moved to Wiki.
+                client.get(&format!("https://en.wikipedia.org/{}", request.url.path.join("/")))
+                .header(Connection::close())
+                .send().unwrap();
+            let mut wikipedia_body: Vec<u8> = Vec::new();
+            wikipedia_response.read_to_end(&mut wikipedia_body);
 
-        let mut response = Response::with(wikipedia_body);
-        response.status = Some(wikipedia_response.status);
-        response.headers = wikipedia_response.headers.clone();
-        println!("Forwarded request for {} to en.wikipedia.org", request.url.path.join("/"));
-        Ok(response)
+            let mut response = Response::with(wikipedia_body);
+            response.status = Some(wikipedia_response.status);
+            response.headers = wikipedia_response.headers.clone();
+            println!("Forwarded request for {} to en.wikipedia.org", request.url.path.join("/"));
+            Ok(response)
+        }
     }
 }
 
@@ -300,7 +356,9 @@ fn main() {
         parser.refer(&mut port).add_option(&["-p", "--port"], Store, "The port to serve HTTP on.");
         parser.parse_args_or_exit();
     }
-    Iron::new(serve_request).http(("localhost", port)).unwrap();
+    let wikipedia_without_wikipedians =
+        WikipediaWithoutWikipedians::new(Wiki::new("en.wikipedia.org"));
+    Iron::new(wikipedia_without_wikipedians).http(("localhost", port)).unwrap();
 }
 
 #[cfg(test)]
