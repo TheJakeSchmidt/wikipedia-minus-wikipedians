@@ -71,9 +71,9 @@ fn call_wikimedia_api(parameters: Vec<(&str, &str)>) -> String {
 
 // TODO: this name is terrible.
 // Returns pairs of (revid, parentid)
-fn get_revert_revision_ids(page: &str) -> Result<Vec<(u64, u64)>, String> {
+fn get_revert_revision_ids(title: &str) -> Result<Vec<(u64, u64)>, String> {
     let json_str = call_wikimedia_api(
-        vec![("action", "query"), ("prop", "revisions"), ("titles", page),
+        vec![("action", "query"), ("prop", "revisions"), ("titles", title),
              ("rvprop", "comment|ids"), ("rvlimit", "60")]);
 
     let json = Json::from_str(&json_str).unwrap();
@@ -95,18 +95,18 @@ fn get_revert_revision_ids(page: &str) -> Result<Vec<(u64, u64)>, String> {
        }).collect())
 }
 
-fn get_latest_revision_id(page: &str) -> Result<u64, String> {
+fn get_latest_revision_id(title: &str) -> Result<u64, String> {
     let json_str = call_wikimedia_api(
-        vec![("action", "query"), ("prop", "revisions"), ("titles", page), ("rvprop", "ids"),
+        vec![("action", "query"), ("prop", "revisions"), ("titles", title), ("rvprop", "ids"),
              ("rvlimit", "1")]);
     let json = Json::from_str(&json_str).unwrap();
     json::get_json_number(
         &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("revid")])
 }
 
-fn get_revision_content(page: &str, id: u64) -> Result<String, String> {
+fn get_revision_content(title: &str, id: u64) -> Result<String, String> {
     let json_str = call_wikimedia_api(
-        vec![("action", "query"), ("prop", "revisions"), ("titles", page), ("rvprop", "content"),
+        vec![("action", "query"), ("prop", "revisions"), ("titles", title), ("rvprop", "content"),
              ("rvlimit", "1"), ("rvstartid", &id.to_string())]);
     let json = Json::from_str(&json_str).unwrap();
     match json::get_json_string(
@@ -116,16 +116,16 @@ fn get_revision_content(page: &str, id: u64) -> Result<String, String> {
     }
 }
 
-fn get_canonical_page_title(page: &str) -> Result<String, String> {
-    let latest_revision_id = get_latest_revision_id(page).unwrap();
-    let page_contents = get_revision_content(page, latest_revision_id).unwrap();
+fn get_canonical_title(title: &str) -> Result<String, String> {
+    let latest_revision_id = get_latest_revision_id(title).unwrap();
+    let page_contents = get_revision_content(title, latest_revision_id).unwrap();
 
     let regex = regex!(r"#REDIRECT \[\[([^]]+)\]\].*");
     match regex.captures(&page_contents) {
-        Some(captures) => get_canonical_page_title(captures.at(1).unwrap()),
+        Some(captures) => get_canonical_title(captures.at(1).unwrap()),
         None => {
-            println!("Canonical page title is \"{}\"", page);
-            Ok(page.to_string())
+            println!("Canonical page title is \"{}\"", title);
+            Ok(title.to_string())
         },
     }
 }
@@ -155,12 +155,12 @@ fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
     }
 }
 
-fn render(page: &str, wikitext: &str) -> Result<String, String> {
+fn render(title: &str, wikitext: &str) -> Result<String, String> {
     let encoded_wikitext =
         percent_encoding::percent_encode(wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET);
     let html = call_wikimedia_api(
         vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
-             ("title", page), ("text", &encoded_wikitext)]);
+             ("title", title), ("text", &encoded_wikitext)]);
     // TODO: check return value
     let json = Json::from_str(&html).unwrap();
     match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
@@ -219,10 +219,10 @@ fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder:
     Ok(String::from_utf8(serialized).unwrap())
 }
 
-fn get_current_page(page: &str) -> String {
+fn get_current_page(title: &str) -> String {
     let client = Client::new();
     let mut res = client.get(
-        &format!("https://en.wikipedia.org/wiki/{}", page))
+        &format!("https://en.wikipedia.org/wiki/{}", title))
         .header(Connection::close())
         .send().unwrap();
 
@@ -232,23 +232,22 @@ fn get_current_page(page: &str) -> String {
     body
 }
 
-// TODO: rename "page" to "title" everywhere
 // TODO: this name is terrible.
-fn get_page_with_vandalism_restored(page: &str) -> Result<String, String> {
-    let canonicalized_page = get_canonical_page_title(page).unwrap();
+fn get_page_with_vandalism_restored(title: &str) -> Result<String, String> {
+    let canonicalized_title = get_canonical_title(title).unwrap();
 
-    let latest_revid = get_latest_revision_id(&canonicalized_page).unwrap();
-    let mut accumulated_contents = get_revision_content(&canonicalized_page, latest_revid).unwrap();
+    let latest_revid = get_latest_revision_id(&canonicalized_title).unwrap();
+    let mut accumulated_contents = get_revision_content(&canonicalized_title, latest_revid).unwrap();
     let mut revisions = vec![];
-    for (revert_revid, vandalism_revid) in get_revert_revision_ids(&canonicalized_page).ok().unwrap() {
-        let reverted_contents = get_revision_content(&canonicalized_page, revert_revid).unwrap();
-        let vandalized_contents = get_revision_content(&canonicalized_page, vandalism_revid).unwrap();
+    for (revert_revid, vandalism_revid) in get_revert_revision_ids(&canonicalized_title).ok().unwrap() {
+        let reverted_contents = get_revision_content(&canonicalized_title, revert_revid).unwrap();
+        let vandalized_contents = get_revision_content(&canonicalized_title, vandalism_revid).unwrap();
         match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
             Some(merged_contents) => {
                 // TODO: replace this with a log statement, if there's a good logging framework.
                 println!(
                     "For page \"{}\", restored vandalism https://en.wikipedia.org/w/index.php?title={}&diff=prev&oldid={}",
-                         &page, &canonicalized_page, revert_revid);
+                         &title, &canonicalized_title, revert_revid);
                 accumulated_contents = merged_contents;
                 revisions.push(revert_revid);
             }
@@ -257,10 +256,11 @@ fn get_page_with_vandalism_restored(page: &str) -> Result<String, String> {
     }
 
     // TODO: replace this with a log statement, if there's a good logging framework.
-    println!("For page \"{}\", restored vandalisms reverted in: {:?}", &page, revisions);
+    println!("For page \"{}\", restored vandalisms reverted in: {:?}", &title, revisions);
 
-    let rendered_body = render(page, &accumulated_contents).unwrap();
-    let current_page_contents = get_current_page(&page); // Note: "page" rather than "canonicalized_page"
+    let rendered_body = render(title, &accumulated_contents).unwrap();
+    // Note: "title" rather than "canonicalized_title", so that redirects look right.
+    let current_page_contents = get_current_page(&title);
     // TODO: randomize the placeholder string per-request
     let page_contents_with_placeholder =
         replace_node_with_placeholder(
