@@ -1,7 +1,11 @@
+#![feature(plugin)]
+#![plugin(regex_macros)]
+
 extern crate html5ever;
 extern crate html5ever_dom_sink;
 extern crate hyper;
 extern crate iron;
+extern crate regex;
 extern crate rustc_serialize;
 extern crate tempfile;
 extern crate tendril;
@@ -109,6 +113,20 @@ fn get_revision_content(page: &str, id: u64) -> Result<String, String> {
     }
 }
 
+fn get_canonical_page_title(page: &str) -> Result<String, String> {
+    let latest_revision_id = get_latest_revision_id(page).unwrap();
+    let page_contents = get_revision_content(page, latest_revision_id).unwrap();
+
+    let regex = regex!(r"#REDIRECT \[\[([^]]+)\]\].*");
+    match regex.captures(&page_contents) {
+        Some(captures) => get_canonical_page_title(captures.at(1).unwrap()),
+        None => {
+            println!("Canonical page title is \"{}\"", page);
+            Ok(page.to_string())
+        },
+    }
+}
+
 fn write_to_temp_file(contents: &str) -> NamedTempFile {
     let tempfile = NamedTempFile::new().unwrap();
     let mut file = OpenOptions::new().write(true).open(tempfile.path()).unwrap();
@@ -211,20 +229,23 @@ fn get_current_page(page: &str) -> String {
     body
 }
 
+// TODO: rename "page" to "title" everywhere
 // TODO: this name is terrible.
 fn get_page_with_vandalism_restored(page: &str) -> Result<String, String> {
-    let latest_revid = get_latest_revision_id(page).unwrap();
-    let mut accumulated_contents = get_revision_content(page, latest_revid).unwrap();
+    let canonicalized_page = get_canonical_page_title(page).unwrap();
+
+    let latest_revid = get_latest_revision_id(&canonicalized_page).unwrap();
+    let mut accumulated_contents = get_revision_content(&canonicalized_page, latest_revid).unwrap();
     let mut revisions = vec![];
-    for (revert_revid, vandalism_revid) in get_revert_revision_ids(page).ok().unwrap() {
-        let reverted_contents = get_revision_content(page, revert_revid).unwrap();
-        let vandalized_contents = get_revision_content(page, vandalism_revid).unwrap();
+    for (revert_revid, vandalism_revid) in get_revert_revision_ids(&canonicalized_page).ok().unwrap() {
+        let reverted_contents = get_revision_content(&canonicalized_page, revert_revid).unwrap();
+        let vandalized_contents = get_revision_content(&canonicalized_page, vandalism_revid).unwrap();
         match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
             Some(merged_contents) => {
                 // TODO: replace this with a log statement, if there's a good logging framework.
                 println!(
-                    "For page \"{}\", restored vandalism https://en.wikipedia.org/w/index.php?title=Zachary_Taylor&diff=prev&oldid={}",
-                         page, revert_revid);
+                    "For page \"{}\", restored vandalism https://en.wikipedia.org/w/index.php?title={}&diff=prev&oldid={}",
+                         &page, &canonicalized_page, revert_revid);
                 accumulated_contents = merged_contents;
                 revisions.push(revert_revid);
             }
@@ -233,10 +254,10 @@ fn get_page_with_vandalism_restored(page: &str) -> Result<String, String> {
     }
 
     // TODO: replace this with a log statement, if there's a good logging framework.
-    println!("For page \"{}\", restored vandalisms reverted in: {:?}", page, revisions);
+    println!("For page \"{}\", restored vandalisms reverted in: {:?}", &page, revisions);
 
     let rendered_body = render(page, &accumulated_contents).unwrap();
-    let current_page_contents = get_current_page(page);
+    let current_page_contents = get_current_page(&page); // Note: "page" rather than "canonicalized_page"
     // TODO: randomize the placeholder string per-request
     let page_contents_with_placeholder =
         replace_node_with_placeholder(
@@ -254,6 +275,7 @@ fn serve_request(request: &mut Request) -> IronResult<Response> {
         let client = Client::new();
         // TODO: error handling
         let mut wikipedia_response =
+            // TODO: not good enough. Needs to include query string.
             client.get(&format!("https://en.wikipedia.org/{}", request.url.path.join("/")))
             .header(Connection::close())
             .send().unwrap();
