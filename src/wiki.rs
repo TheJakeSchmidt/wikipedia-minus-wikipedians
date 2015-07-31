@@ -65,9 +65,12 @@ impl Wiki {
 
     /// Returns the latest revision ID for the page `title`.
     pub fn get_latest_revision(&self, title: &str) -> Result<Revision, String> {
-        // TODO: Can this be a one-liner? Does try!() work properly like that?
-        let revisions = try!(self.get_revisions(title, 1));
-        Ok(revisions[0].clone())
+        let mut revisions = try!(self.get_revisions(title, 1));
+        if !revisions.is_empty() {
+            Ok(revisions.pop().unwrap())
+        } else {
+            Err(format!("No revisions found for page \"{}\"", title))
+        }
     }
 
     /// Returns the contents of the page `title` as of (i.e., immediately after) revision `id`.
