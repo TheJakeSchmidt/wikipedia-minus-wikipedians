@@ -25,9 +25,8 @@ impl Wiki {
         Wiki { hostname: hostname.to_string() }
     }
 
-    // TODO: return a Result
     /// Calls the MediaWiki API with the given parameters and format=json. Returns the raw JSON.
-    fn call_mediawiki_api(&self, parameters: Vec<(&str, &str)>) -> String {
+    fn call_mediawiki_api(&self, parameters: Vec<(&str, &str)>) -> Result<String, String> {
         let post_body =
             parameters.into_iter().map(|p| format!("{}={}", p.0, p.1))
             .collect::<Vec<_>>().join("&") + "&format=json";
@@ -40,14 +39,14 @@ impl Wiki {
 
         let mut body = String::new();
         response.read_to_string(&mut body).unwrap();
-        body
+        Ok(body)
     }
 
     /// Returns the last `limit` revisions for the page `title`.
     pub fn get_revisions(&self, title: &str, limit: u64) -> Result<Vec<Revision>, String> {
         let json_str = self.call_mediawiki_api(
             vec![("action", "query"), ("prop", "revisions"), ("titles", title),
-                 ("rvprop", "comment|ids"), ("rvlimit", &limit.to_string())]);
+                 ("rvprop", "comment|ids"), ("rvlimit", &limit.to_string())]).unwrap();
         let json = Json::from_str(&json_str).unwrap();
         let revisions = try!(
             json::get_json_array(&json, &[Key("query"), Key("pages"), Only, Key("revisions")]));
@@ -83,7 +82,7 @@ impl Wiki {
     pub fn get_revision_content(&self, title: &str, id: u64) -> Result<String, String> {
         let json_str = self.call_mediawiki_api(
             vec![("action", "query"), ("prop", "revisions"), ("titles", title), ("rvprop", "content"),
-                 ("rvlimit", "1"), ("rvstartid", &id.to_string())]);
+                 ("rvlimit", "1"), ("rvstartid", &id.to_string())]).unwrap();
         let json = Json::from_str(&json_str).unwrap();
         match json::get_json_string(
             &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")]) {
@@ -114,7 +113,7 @@ impl Wiki {
             percent_encoding::percent_encode(wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET);
         let html = self.call_mediawiki_api(
             vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
-                 ("title", title), ("text", &encoded_wikitext)]);
+                 ("title", title), ("text", &encoded_wikitext)]).unwrap();
         // TODO: check return value
         let json = Json::from_str(&html).unwrap();
         match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
