@@ -46,7 +46,6 @@ use json::JsonPathElement::{Key, Only};
 
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
-// TODO: Do nested functions work? If so, use those where appropriate.
 // TODO: there are some places where I've handrolled try!() equivalents. Fix those.
 // TODO: make sure I'm returning Results everywhere, and propagating errors correctly. Remove all
 // uses of unwrap() that might panic.
@@ -130,16 +129,16 @@ fn get_canonical_title(title: &str) -> Result<String, String> {
     }
 }
 
-fn write_to_temp_file(contents: &str) -> NamedTempFile {
-    let tempfile = NamedTempFile::new().unwrap();
-    let mut file = OpenOptions::new().write(true).open(tempfile.path()).unwrap();
-    file.write_all(contents.as_bytes()).unwrap();
-    file.flush().unwrap();
-    tempfile
-}
-
 // TODO: I'm not so sure these parameter names aren't terrible.
 fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
+    fn write_to_temp_file(contents: &str) -> NamedTempFile {
+        let tempfile = NamedTempFile::new().unwrap();
+        let mut file = OpenOptions::new().write(true).open(tempfile.path()).unwrap();
+        file.write_all(contents.as_bytes()).unwrap();
+        file.flush().unwrap();
+        tempfile
+    }
+
     let old_tempfile = write_to_temp_file(old);
     let new1_tempfile = write_to_temp_file(new1);
     let new2_tempfile = write_to_temp_file(new2);
@@ -169,20 +168,20 @@ fn render(title: &str, wikitext: &str) -> Result<String, String> {
     }
 }
 
-fn has_matching_id(attributes: &Vec<Attribute>, id: &str) -> bool {
-    // TODO: could also do this with filter() and is_empty(). Not sure if that would be better.
-    for attribute in attributes {
-        // TODO: do I seriously have to construct a StrTendril here?
-        // There has to be a better way.
-        if attribute.name.local.as_slice() == "id" &&
-            attribute.value == tendril::StrTendril::from_str(id).unwrap() {
-                return true;
-            }
-    }
-    return false;
-}
-
 fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
+    fn has_matching_id(attributes: &Vec<Attribute>, id: &str) -> bool {
+        // TODO: could also do this with filter() and is_empty(). Not sure if that would be better.
+        for attribute in attributes {
+            // TODO: do I seriously have to construct a StrTendril here?
+            // There has to be a better way.
+            if attribute.name.local.as_slice() == "id" &&
+                attribute.value == tendril::StrTendril::from_str(id).unwrap() {
+                    return true;
+                }
+        }
+        return false;
+    }
+
     let node = handle.borrow();
     match node.node {
         NodeEnum::Element(_, ref attributes) if has_matching_id(attributes, id) => Ok(handle.clone()),
