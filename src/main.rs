@@ -178,7 +178,7 @@ impl WikipediaWithoutWikipedians {
 
         let body = self.wiki.parse_wikitext(&canonical_title, &accumulated_contents).unwrap();
         // Note: "title" rather than "canonical_title", so that redirects look right.
-        let current_page_contents = Wiki::get_current_page_content(&title);
+        let current_page_contents = self.wiki.get_current_page_content(&title);
         // TODO: randomize the placeholder string per-request
         let page_contents_with_placeholder =
             replace_node_with_placeholder(
@@ -225,7 +225,7 @@ fn main() {
         parser.parse_args_or_exit();
     }
     let wikipedia_without_wikipedians =
-        WikipediaWithoutWikipedians::new(Wiki::new("en.wikipedia.org"));
+        WikipediaWithoutWikipedians::new(Wiki::new("en.wikipedia.org", Client::new()));
     Iron::new(wikipedia_without_wikipedians).http(("localhost", port)).unwrap();
 }
 

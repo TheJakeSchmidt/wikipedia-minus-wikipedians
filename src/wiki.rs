@@ -10,6 +10,7 @@ use ::json::JsonPathElement::{Key, Only};
 
 pub struct Wiki {
     hostname: String,
+    client: Client,
 }
 
 #[derive(Clone)]
@@ -21,8 +22,9 @@ pub struct Revision {
 
 impl Wiki {
     /// Constructs a Wiki object representing the wiki at `hostname` (e.g. "en.wikipedia.org").
-    pub fn new(hostname: &str) -> Wiki {
-        Wiki { hostname: hostname.to_string() }
+    // TODO: change hostname to String
+    pub fn new(hostname: &str, client: Client) -> Wiki {
+        Wiki { hostname: hostname.to_string(), client: client }
     }
 
     /// Calls the MediaWiki API with the given parameters and format=json. Returns the raw JSON.
@@ -31,8 +33,7 @@ impl Wiki {
             parameters.into_iter().map(|p| format!("{}={}", p.0, p.1))
             .collect::<Vec<_>>().join("&") + "&format=json";
 
-        let client = Client::new();
-        let mut response = client.post(&format!("https://{}/w/api.php", self.hostname))
+        let mut response = self.client.post(&format!("https://{}/w/api.php", self.hostname))
             .body(&post_body)
             .header(Connection::close())
             .send().unwrap();
@@ -118,11 +119,8 @@ impl Wiki {
     }
 
     /// Gets the current, fully-rendered (**HTML**) contents of the page `title`.
-    pub fn get_current_page_content(title: &str) -> String {
-        // TODO: should this struct be keeping a Client instead of creating new ones for each method
-        // call, here and in call_mediawiki_api?
-        let client = Client::new();
-        let mut res = client.get(
+    pub fn get_current_page_content(&self, title: &str) -> String {
+        let mut res = self.client.get(
             &format!("https://en.wikipedia.org/wiki/{}", title))
             .header(Connection::close())
             .send().unwrap();
