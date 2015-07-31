@@ -134,12 +134,12 @@ fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
     }
 }
 
-fn render(wikitext: &str) -> Result<String, String> {
+fn render(page: &str, wikitext: &str) -> Result<String, String> {
     let encoded_wikitext =
         percent_encoding::percent_encode(wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET);
     let html = call_wikimedia_api(
         vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
-             ("text", &encoded_wikitext)]);
+             ("title", page), ("text", &encoded_wikitext)]);
     // TODO: check return value
     let json = Json::from_str(&html).unwrap();
     match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
@@ -235,7 +235,7 @@ fn get_page_with_vandalism_restored(page: &str) -> Result<String, String> {
     // TODO: replace this with a log statement, if there's a good logging framework.
     println!("For page \"{}\", restored vandalisms reverted in: {:?}", page, revisions);
 
-    let rendered_body = render(&accumulated_contents).unwrap();
+    let rendered_body = render(page, &accumulated_contents).unwrap();
     let current_page_contents = get_current_page(page);
     // TODO: randomize the placeholder string per-request
     let page_contents_with_placeholder =
