@@ -48,27 +48,19 @@ impl Wiki {
             vec![("action", "query"), ("prop", "revisions"), ("titles", title),
                  ("rvprop", "comment|ids"), ("rvlimit", &limit.to_string())]).unwrap();
         let json = Json::from_str(&json_str).unwrap();
-        let revisions = try!(
+        let revisions_json = try!(
             json::get_json_array(&json, &[Key("query"), Key("pages"), Only, Key("revisions")]));
 
-        // Check that  all revisions have revid and parentid (they all should).
-        // TODO: what about making a Vec<Result<Revision>, String> and then rolling that up with a fold()? Would eliminate the repetition of the get_json_* calls.
-        if revisions.into_iter().any(|revision| {
-            json::get_json_number(revision, &[Key("revid")]).is_err() ||
-            json::get_json_number(revision, &[Key("parentid")]).is_err() ||
-            json::get_json_string(revision, &[Key("comment")]).is_err()
-        }) {
-            Err(format!(
-                "One or more revisions of page \"{}\" have missing or invalid field", title))
-        } else {
-            Ok(revisions.into_iter().map(|revision| {
+        let mut revisions = Vec::with_capacity(revisions_json.len());
+        for revision_json in revisions_json {
+            revisions.push(
                 Revision {
-                    revid: json::get_json_number(revision, &[Key("revid")]).unwrap(),
-                    parentid: json::get_json_number(revision, &[Key("parentid")]).unwrap(),
-                    comment: json::get_json_string(revision, &[Key("comment")]).unwrap().to_string()
-                }
-            }).collect())
+                    revid: try!(json::get_json_number(revision_json, &[Key("revid")])),
+                    parentid: try!(json::get_json_number(revision_json, &[Key("parentid")])),
+                    comment: try!(json::get_json_string(revision_json, &[Key("comment")])).to_string()
+                });
         }
+        Ok(revisions)
     }
 
     /// Returns the latest revision ID for the page `title`.
