@@ -14,6 +14,7 @@ use json::JsonPathElement::Key;
 use json::JsonPathElement::Only;
 
 // TODO: return &str with a lifetime matching path_elements
+// TODO: can I just use {:?} where this is used?
 fn pretty_print(path_elements: &[JsonPathElement]) -> String {
     // TODO: add (root) to the beginning always.
     if path_elements.is_empty() {
