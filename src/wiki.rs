@@ -12,7 +12,6 @@ pub struct Wiki {
     hostname: String,
 }
 
-// TODO: return Revisions instead of IDs more places, where appropriate
 #[derive(Clone)]
 pub struct Revision {
     pub revid: u64,
