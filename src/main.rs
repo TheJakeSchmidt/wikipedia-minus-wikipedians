@@ -59,14 +59,13 @@ fn call_wikimedia_api(parameters: Vec<(&str, &str)>) -> String {
         .collect::<Vec<_>>().join("&") + "&format=json";
 
     let client = Client::new();
-    // TODO: rename to "response".
-    let mut res = client.post("https://en.wikipedia.org/w/api.php")
+    let mut response = client.post("https://en.wikipedia.org/w/api.php")
         .body(&post_body)
         .header(Connection::close())
         .send().unwrap();
 
     let mut body = String::new();
-    res.read_to_string(&mut body).unwrap();
+    response.read_to_string(&mut body).unwrap();
     body
 }
 
