@@ -143,7 +143,7 @@ impl WikipediaWithoutWikipedians {
 
     /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
     fn get_vandalism_reversions(&self, title: &str) -> Result<Vec<Revision>, String> {
-        let revisions = try!(self.wiki.get_revision_ids(title, 60));
+        let revisions = try!(self.wiki.get_revisions(title, 60));
         Ok(revisions.into_iter().filter(|revision| revision.comment.contains("vandal")).collect())
     }
 

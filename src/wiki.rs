@@ -45,7 +45,7 @@ impl Wiki {
     }
 
     /// Returns the last `limit` revisions for the page `title`.
-    pub fn get_revision_ids(&self, title: &str, limit: u64) -> Result<Vec<Revision>, String> {
+    pub fn get_revisions(&self, title: &str, limit: u64) -> Result<Vec<Revision>, String> {
         let json_str = self.call_mediawiki_api(
             vec![("action", "query"), ("prop", "revisions"), ("titles", title),
                  ("rvprop", "comment|ids"), ("rvlimit", &limit.to_string())]);
@@ -76,7 +76,7 @@ impl Wiki {
     /// Returns the latest revision ID for the page `title`.
     pub fn get_latest_revision(&self, title: &str) -> Result<Revision, String> {
         // TODO: Can this be a one-liner? Does try!() work properly like that?
-        let revisions = try!(self.get_revision_ids(title, 1));
+        let revisions = try!(self.get_revisions(title, 1));
         Ok(revisions[0].clone())
     }
 
