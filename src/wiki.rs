@@ -13,6 +13,7 @@ pub struct Wiki {
 }
 
 // TODO: return Revisions instead of IDs more places, where appropriate
+#[derive(Clone)]
 pub struct Revision {
     pub revid: u64,
     pub parentid: u64,
@@ -73,10 +74,10 @@ impl Wiki {
     }
 
     /// Returns the latest revision ID for the page `title`.
-    pub fn get_latest_revision_id(&self, title: &str) -> Result<u64, String> {
+    pub fn get_latest_revision(&self, title: &str) -> Result<Revision, String> {
         // TODO: Can this be a one-liner? Does try!() work properly like that?
         let revisions = try!(self.get_revision_ids(title, 1));
-        Ok(revisions[0].revid)
+        Ok(revisions[0].clone())
     }
 
     /// Returns the contents of the page `title` as of (i.e., immediately after) revision `id`.
@@ -94,7 +95,7 @@ impl Wiki {
 
     /// Follows all redirects to find the canonical name of the page at `title`.
     pub fn get_canonical_title(&self, title: &str) -> Result<String, String> {
-        let latest_revision_id = self.get_latest_revision_id(title).unwrap();
+        let latest_revision_id = self.get_latest_revision(title).unwrap().revid;
         let page_contents = self.get_revision_content(title, latest_revision_id).unwrap();
 
         let regex = regex!(r"#REDIRECT \[\[([^]]+)\]\].*");

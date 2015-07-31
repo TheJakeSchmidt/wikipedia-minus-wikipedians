@@ -151,7 +151,7 @@ impl WikipediaWithoutWikipedians {
     fn get_page_with_vandalism_restored(&self, title: &str) -> Result<String, String> {
         let canonical_title = self.wiki.get_canonical_title(title).unwrap();
 
-        let latest_revid = self.wiki.get_latest_revision_id(&canonical_title).unwrap();
+        let latest_revid = self.wiki.get_latest_revision(&canonical_title).unwrap().revid;
         let mut accumulated_contents =
             self.wiki.get_revision_content(&canonical_title, latest_revid).unwrap();
         let mut revisions = vec![];
