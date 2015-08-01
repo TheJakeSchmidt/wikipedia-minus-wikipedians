@@ -164,8 +164,8 @@ impl WikipediaWithoutWikipedians {
                 Some(merged_contents) => {
                     // TODO: replace this with a log statement, if there's a good logging framework.
                     println!(
-                        "For page \"{}\", restored vandalism https://en.wikipedia.org/w/index.php?title={}&diff=prev&oldid={}",
-                        &title, &canonical_title, revision.revid);
+                        "For page \"{}\", restored vandalism https://{}/w/index.php?title={}&diff=prev&oldid={}",
+                        &title, self.wiki.hostname, &canonical_title, revision.revid);
                     accumulated_contents = merged_contents;
                     revisions.push(revision.revid);
                 }
@@ -200,8 +200,9 @@ impl Handler for WikipediaWithoutWikipedians {
             let client = Client::new();
             // TODO: error handling
             let mut wikipedia_response =
-                // TODO: not good enough. Needs to include query string. Needs to use hostname instead of always en.wikipedia.org. Maybe should be moved to wiki module.
-                client.get(&format!("https://en.wikipedia.org/{}", request.url.path.join("/")))
+                // TODO: not good enough. Needs to include query string. Maybe should be moved to wiki module.
+                client.get(
+                    &format!("https://{}/{}", self.wiki.hostname, request.url.path.join("/")))
                 .header(Connection::close())
                 .send().unwrap();
             let mut wikipedia_body: Vec<u8> = Vec::new();
@@ -210,7 +211,8 @@ impl Handler for WikipediaWithoutWikipedians {
             let mut response = Response::with(wikipedia_body);
             response.status = Some(wikipedia_response.status);
             response.headers = wikipedia_response.headers.clone();
-            println!("Forwarded request for {} to en.wikipedia.org", request.url.path.join("/"));
+            println!("Forwarded request for {} to {}", request.url.path.join("/"),
+                     self.wiki.hostname);
             Ok(response)
         }
     }
@@ -218,14 +220,16 @@ impl Handler for WikipediaWithoutWikipedians {
 
 fn main() {
     let mut port = 3000;
+    let mut wiki = "en.wikipedia.org".to_string();
     {
         let mut parser = ArgumentParser::new();
         parser.set_description("TODO: Usage description");
         parser.refer(&mut port).add_option(&["-p", "--port"], Store, "The port to serve HTTP on.");
+        parser.refer(&mut wiki).add_option(&["--wiki"], Store, "The wiki to mirror.");
         parser.parse_args_or_exit();
     }
     let wikipedia_without_wikipedians =
-        WikipediaWithoutWikipedians::new(Wiki::new("en.wikipedia.org".to_string(), Client::new()));
+        WikipediaWithoutWikipedians::new(Wiki::new(wiki.to_string(), Client::new()));
     Iron::new(wikipedia_without_wikipedians).http(("localhost", port)).unwrap();
 }
 

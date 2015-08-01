@@ -9,7 +9,7 @@ use ::json;
 use ::json::JsonPathElement::{Key, Only};
 
 pub struct Wiki {
-    hostname: String,
+    pub hostname: String,
     client: Client,
 }
 
@@ -120,7 +120,7 @@ impl Wiki {
     /// Gets the current, fully-rendered (**HTML**) contents of the page `title`.
     pub fn get_current_page_content(&self, title: &str) -> String {
         let mut res = self.client.get(
-            &format!("https://en.wikipedia.org/wiki/{}", title))
+            &format!("https://{}/wiki/{}", self.hostname, title))
             .header(Connection::close())
             .send().unwrap();
 
