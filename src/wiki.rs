@@ -22,9 +22,8 @@ pub struct Revision {
 
 impl Wiki {
     /// Constructs a Wiki object representing the wiki at `hostname` (e.g. "en.wikipedia.org").
-    // TODO: change hostname to String
-    pub fn new(hostname: &str, client: Client) -> Wiki {
-        Wiki { hostname: hostname.to_string(), client: client }
+    pub fn new(hostname: String, client: Client) -> Wiki {
+        Wiki { hostname: hostname, client: client }
     }
 
     /// Calls the MediaWiki API with the given parameters and format=json. Returns the raw JSON.

@@ -225,7 +225,7 @@ fn main() {
         parser.parse_args_or_exit();
     }
     let wikipedia_without_wikipedians =
-        WikipediaWithoutWikipedians::new(Wiki::new("en.wikipedia.org", Client::new()));
+        WikipediaWithoutWikipedians::new(Wiki::new("en.wikipedia.org".to_string(), Client::new()));
     Iron::new(wikipedia_without_wikipedians).http(("localhost", port)).unwrap();
 }
 
