@@ -23,7 +23,7 @@ fn pretty_print(path_elements: &[JsonPathElement]) -> String {
         path_elements.into_iter().map(|path_element| {
             match path_element {
                 // TODO: why do I need the JsonPathElement:: here? I think I don't.
-                &JsonPathElement::Key(ref key) => key.to_string(), // TODO: can I remove to_string()?
+                &JsonPathElement::Key(ref key) => key.to_string(),
                 &JsonPathElement::Only => "(only)".to_string(),
             }
         }).collect::<Vec<_>>().join(".")
