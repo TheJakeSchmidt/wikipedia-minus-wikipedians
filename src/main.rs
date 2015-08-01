@@ -134,11 +134,12 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
 // TODO: rename?
 struct WikipediaWithoutWikipedians {
     wiki: Wiki,
+    client: Client
 }
 
 impl WikipediaWithoutWikipedians {
-    fn new(wiki: Wiki) -> WikipediaWithoutWikipedians {
-        WikipediaWithoutWikipedians { wiki: wiki }
+    fn new(wiki: Wiki, client: Client) -> WikipediaWithoutWikipedians {
+        WikipediaWithoutWikipedians { wiki: wiki, client: client }
     }
 
     /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
@@ -197,11 +198,10 @@ impl Handler for WikipediaWithoutWikipedians {
             Ok(response)
         } else {
             // TODO: should I use an HTTP redirect here instead? Would that work? Would it be desirable?
-            let client = Client::new();
             // TODO: error handling
             let mut wikipedia_response =
                 // TODO: not good enough. Needs to include query string. Maybe should be moved to wiki module.
-                client.get(
+                self.client.get(
                     &format!("https://{}/{}", self.wiki.hostname, request.url.path.join("/")))
                 .header(Connection::close())
                 .send().unwrap();
@@ -229,7 +229,7 @@ fn main() {
         parser.parse_args_or_exit();
     }
     let wikipedia_without_wikipedians =
-        WikipediaWithoutWikipedians::new(Wiki::new(wiki.to_string(), Client::new()));
+        WikipediaWithoutWikipedians::new(Wiki::new(wiki.to_string(), Client::new()), Client::new());
     Iron::new(wikipedia_without_wikipedians).http(("localhost", port)).unwrap();
 }
 
