@@ -53,7 +53,6 @@ use wiki::Wiki;
 // TODO: there are some places where I've handrolled try!() equivalents. Fix those.
 // TODO: make sure I'm returning Results everywhere, and propagating errors correctly. Remove all
 // uses of unwrap() that might panic.
-// TODO: The page "Battle_of_Palo_Alto" is truncated. Figure out the best way to debug.
 
 // TODO: I'm not so sure these parameter names aren't terrible.
 // TODO: would Result make more sense than Option for this return value?

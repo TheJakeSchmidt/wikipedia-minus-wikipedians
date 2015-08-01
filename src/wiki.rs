@@ -105,12 +105,13 @@ impl Wiki {
     /// returning the rendered HTML.
     pub fn parse_wikitext(&self, title: &str, wikitext: &str) -> Result<String, String> {
         let encoded_wikitext =
-            percent_encoding::percent_encode(wikitext.as_bytes(), percent_encoding::QUERY_ENCODE_SET);
-        let html = self.call_mediawiki_api(
+            percent_encoding::percent_encode(
+                wikitext.as_bytes(), percent_encoding::FORM_URLENCODED_ENCODE_SET);
+        let response = self.call_mediawiki_api(
             vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
                  ("title", title), ("text", &encoded_wikitext)]).unwrap();
         // TODO: check return value
-        let json = Json::from_str(&html).unwrap();
+        let json = Json::from_str(&response).unwrap();
         match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
             Ok(contents) => Ok(contents.to_string()),
             Err(message) => Err(message),
