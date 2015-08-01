@@ -95,7 +95,7 @@ impl Wiki {
         match regex.captures(&page_contents) {
             Some(captures) => self.get_canonical_title(captures.at(1).unwrap()),
             None => {
-                println!("Canonical page title is \"{}\"", title);
+                info!("Canonical page title is \"{}\"", title);
                 Ok(title.to_string())
             },
         }

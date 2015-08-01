@@ -6,6 +6,9 @@ extern crate html5ever;
 extern crate html5ever_dom_sink;
 extern crate hyper;
 extern crate iron;
+#[macro_use]
+extern crate log;
+extern crate log4rs;
 extern crate regex;
 extern crate rustc_serialize;
 extern crate tempfile;
@@ -163,9 +166,9 @@ impl WikipediaWithoutWikipedians {
                 self.wiki.get_revision_content(&canonical_title, revision.parentid).unwrap();
             match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
                 Some(merged_contents) => {
-                    // TODO: replace this with a log statement, if there's a good logging framework.
-                    println!(
-                        "For page \"{}\", restored vandalism https://{}/w/index.php?title={}&diff=prev&oldid={}",
+                    info!(
+                        concat!("For page \"{}\", restored vandalism ",
+                                "https://{}/w/index.php?title={}&diff=prev&oldid={}"),
                         &title, self.wiki.hostname, &canonical_title, revision.revid);
                     accumulated_contents = merged_contents;
                     revisions.push(revision.revid);
@@ -173,9 +176,6 @@ impl WikipediaWithoutWikipedians {
                 None => (),
             }
         }
-
-        // TODO: replace this with a log statement, if there's a good logging framework.
-        println!("For page \"{}\", restored vandalisms reverted in: {:?}", &title, revisions);
 
         let body = self.wiki.parse_wikitext(&canonical_title, &accumulated_contents).unwrap();
         // Note: "title" rather than "canonical_title", so that redirects look right.
@@ -211,14 +211,16 @@ impl Handler for WikipediaWithoutWikipedians {
             let mut response = Response::with(wikipedia_body);
             response.status = Some(wikipedia_response.status);
             response.headers = wikipedia_response.headers.clone();
-            println!("Forwarded request for {} to {}", request.url.path.join("/"),
-                     self.wiki.hostname);
+            info!("Forwarded request for {} to {}", request.url.path.join("/"),
+                  self.wiki.hostname);
             Ok(response)
         }
     }
 }
 
 fn main() {
+    log4rs::init_file("log.toml", Default::default()).unwrap();
+
     let mut port = 3000;
     let mut wiki = "en.wikipedia.org".to_string();
     {
