@@ -162,7 +162,7 @@ mod tests {
                       "{\"key1\": null}"] {
             assert_error_message(
                 &get_json_string(&Json::from_str(json).unwrap(), &[Key("key1"), Key("key2")]),
-                "Asked for key key2 in key1, but value is not an object");
+                "Asked for key key2 in (root).key1, but value is not an object");
         }
     }
 
@@ -171,7 +171,7 @@ mod tests {
         assert_error_message(
             &get_json_string(
                 &Json::from_str("{\"key\": {}}").unwrap(), &[Key("key"), Only]),
-            "Asked for only key in key, but object has 0 values");
+            "Asked for only key in (root).key, but object has 0 values");
     }
 
     #[test]
@@ -180,7 +180,7 @@ mod tests {
             &get_json_string(
                 &Json::from_str("{\"key\": {\"key1\": \"val1\", \"key2\": \"val2\"}}").unwrap(),
                 &[Key("key"), Only]),
-            "Asked for only key in key, but object has 2 values");
+            "Asked for only key in (root).key, but object has 2 values");
     }
 
     #[test]
@@ -188,7 +188,7 @@ mod tests {
         assert_error_message(
             &get_json_string(
                 &Json::from_str("{\"key\": []}").unwrap(), &[Key("key"), Only]),
-            "Asked for only key in key, but array has 0 elements");
+            "Asked for only key in (root).key, but array has 0 elements");
     }
 
     #[test]
@@ -197,7 +197,7 @@ mod tests {
             &get_json_string(
                 &Json::from_str("{\"key\": [\"val1\", \"val2\"]}").unwrap(),
                 &[Key("key"), Only]),
-            "Asked for only key in key, but array has 2 elements");
+            "Asked for only key in (root).key, but array has 2 elements");
     }
 
     #[test]
@@ -208,7 +208,7 @@ mod tests {
                       "{\"key1\": null}"] {
             assert_error_message(
                 &get_json_string(&Json::from_str(json).unwrap(), &[Key("key1"), Only]),
-                "Asked for only key in key1, but value is not an object or array");
+                "Asked for only key in (root).key1, but value is not an object or array");
         }
     }
 
@@ -221,7 +221,7 @@ mod tests {
                       "{\"key1\": null}"] {
             assert_error_message(
                 &get_json_array(&Json::from_str(json).unwrap(), &[Key("key1")]),
-                "Asked for array key1, but value is not an array");
+                "Asked for array (root).key1, but value is not an array");
         }
     }
 
@@ -234,7 +234,7 @@ mod tests {
                       "{\"key1\": null}"] {
             assert_error_message(
                 &get_json_number(&Json::from_str(json).unwrap(), &[Key("key1")]),
-                "Asked for number key1, but value is not a number");
+                "Asked for number (root).key1, but value is not a number");
         }
     }
 
@@ -247,7 +247,7 @@ mod tests {
                       "{\"key1\": null}"] {
             assert_error_message(
                 &get_json_string(&Json::from_str(json).unwrap(), &[Key("key1")]),
-                "Asked for string key1, but value is not a string");
+                "Asked for string (root).key1, but value is not a string");
         }
     }
 }
