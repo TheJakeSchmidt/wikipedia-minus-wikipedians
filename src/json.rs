@@ -13,20 +13,17 @@ pub enum JsonPathElement {
 use json::JsonPathElement::Key;
 use json::JsonPathElement::Only;
 
-// TODO: return &str with a lifetime matching path_elements
-// TODO: can I just use {:?} where this is used?
 fn pretty_print(path_elements: &[JsonPathElement]) -> String {
-    // TODO: add (root) to the beginning always.
-    if path_elements.is_empty() {
-        "(root)".to_string()
-    } else {
-        path_elements.into_iter().map(|path_element| {
+    let mut display_elements = Vec::with_capacity(path_elements.len() + 1);
+    display_elements.push("(root)".to_string());
+    display_elements.extend(path_elements.into_iter().map(
+        |path_element| {
             match path_element {
                 &Key(ref key) => key.to_string(),
                 &Only => "(only)".to_string(),
             }
-        }).collect::<Vec<_>>().join(".")
-    }
+        }));
+    display_elements.into_iter().collect::<Vec<_>>().join(".")
 }
 
 // TODO: document
