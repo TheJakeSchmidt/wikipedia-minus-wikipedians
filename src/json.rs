@@ -1,13 +1,42 @@
+//! Contains several functions and an enum (JsonPathElement) that make it easy to navigate
+//! rustc_serialize::json::Json objects that represent JSON objects with a known structure.
+//!
+//! # Example
+//!
+//! Given this JSON object:
+//!
+//! ```
+//! let json_str = r#"{"key1": {"key2": {"key3": "val1"}},
+//!                             "key4": "val2"}"#;
+//! let json = rustc_serialize::json::Json::from_str(json_str).unwrap();
+//! ```
+//!
+//! You can extract the string "val1" by following "key1", "key2", and then the only key in the
+//! resulting JSON object:
+//!
+//! ```
+//! assert_eq!(
+//!     Ok("val1"),
+//!     json::get_json_string(&json, &[json::JsonPathElement::Key("key"),
+//!                                    json::JsonPathElement::Key("key1"),
+//!                                    json::JsonPathElement::Only]));
+//! ```
+
 extern crate rustc_serialize;
 
 use rustc_serialize::json::Json;
 use rustc_serialize::json::Json::{Array, Object};
 
-// TODO: doc comments
-
+/// Enum representing a single element of a JSON path.
+///
+/// Example: when retrieving "inner_value" from {"outer_key1": 6, "outer_key2": {"inner_key":
+/// "inner_value"}}, the path elements are "outer_key2" and "inner_key". "outer_key2" is represented
+/// as Key("outer_key2"), while "inner_key" can be represented either as Key("inner_key") or Only.
 pub enum JsonPathElement {
-    Key(&'static str), // Use the value associated with a specific key.
-    Only,               // Use the only value in an array or object.
+    /// Represents a specific, known key.
+    Key(&'static str),
+    /// Represents the only key in an object.
+    Only,
 }
 
 use json::JsonPathElement::Key;
@@ -26,7 +55,6 @@ fn pretty_print(path_elements: &[JsonPathElement]) -> String {
     display_elements.into_iter().collect::<Vec<_>>().join(".")
 }
 
-// TODO: document
 fn get_json_value<'a>(json: &'a Json, path: &[JsonPathElement], index: usize) ->
     Result<&'a Json, String> {
     if index == path.len() {
@@ -68,6 +96,7 @@ fn get_json_value<'a>(json: &'a Json, path: &[JsonPathElement], index: usize) ->
     }
 }
 
+/// Returns the array found at `path` inside `json`.
 pub fn get_json_array<'a>(json: &'a Json, path: &[JsonPathElement]) -> Result<&'a Vec<Json>, String> {
     match get_json_value(json, path, 0) {
         Ok(&Json::Array(ref value)) => Ok(value),
@@ -77,6 +106,7 @@ pub fn get_json_array<'a>(json: &'a Json, path: &[JsonPathElement]) -> Result<&'
     }
 }
 
+/// Returns the number found at `path` inside `json`.
 pub fn get_json_number(json: &Json, path: &[JsonPathElement]) -> Result<u64, String> {
     match get_json_value(json, path, 0) {
         Ok(ref value) => {
@@ -91,6 +121,7 @@ pub fn get_json_number(json: &Json, path: &[JsonPathElement]) -> Result<u64, Str
     }
 }
 
+/// Returns the string found at `path` inside `json`.
 pub fn get_json_string<'a>(json: &'a Json, path: &[JsonPathElement]) -> Result<&'a str, String> {
     match get_json_value(json, path, 0) {
         Ok(&Json::String(ref value)) => Ok(value),
@@ -105,6 +136,14 @@ mod tests {
     use super::{get_json_array, get_json_string, get_json_number};
     use super::JsonPathElement::*;
     use rustc_serialize::json::Json;
+
+    #[test]
+    fn test_doc_example() {
+        let json_str = r#"{"key1": {"key2": {"key3": "val1"}},
+                                    "key4": "val2"}"#;
+        let json = Json::from_str(json_str).unwrap();
+        assert_eq!(Ok("val1"), get_json_string(&json, &[Key("key1"), Key("key2"), Only]));
+    }
 
     #[test]
     fn test_get_json_value_key() {
