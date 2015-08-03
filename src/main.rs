@@ -121,16 +121,11 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
     let node = handle.borrow();
     match node.node {
         NodeEnum::Element(_, ref attributes) if has_matching_id(attributes, id) => Ok(handle.clone()),
-        _ => {
-            for child in &node.children {
-                match find_node_by_id(child, id) {
-                    // TODO: this looks weird. Is this an abnormal way to do things?
-                    Ok(node) => return Ok(node),
-                    _ => continue,
-                }
-            }
-            Err(format!("No node with ID {} found", id))
-        },
+        _ => (&node.children).into_iter()
+            .map(|child| find_node_by_id(child, id))
+            .filter(|result| result.is_ok())
+            .map(|result| result.unwrap())
+            .next().ok_or(format!("No node with ID {} found", id)),
     }
 }
 
