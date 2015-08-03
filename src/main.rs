@@ -1,5 +1,6 @@
 #![feature(plugin)]
 #![plugin(regex_macros)]
+#![feature(collections)]
 
 extern crate argparse;
 extern crate html5ever;
@@ -30,6 +31,7 @@ mod wiki;
 
 use argparse::ArgumentParser;
 use argparse::Store;
+//use collections::borrow::Borrow;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
@@ -112,10 +114,8 @@ fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder:
 fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
     fn has_matching_id(attributes: &Vec<Attribute>, id: &str) -> bool {
         return attributes.into_iter().any(
-            // TODO: do I seriously have to construct a StrTendril here?
-            // There has to be a better way.
             |attribute| attribute.name.local.as_slice() == "id" &&
-                attribute.value == tendril::StrTendril::from_str(id).unwrap());
+                format!("{}", attribute.value) == id);
     }
 
     let node = handle.borrow();
