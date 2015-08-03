@@ -106,7 +106,9 @@ fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder:
                html5ever::tree_builder::interface::NodeOrText::AppendText(
                    tendril::StrTendril::from_str(placeholder).unwrap()));
     let mut serialized: Vec<u8> = vec![];
-    html5ever::serialize::serialize(&mut serialized, &dom.document, Default::default());
+    try_display!(
+        html5ever::serialize::serialize(&mut serialized, &dom.document, Default::default()),
+        "Failed to serialize modified HTML");
     Ok(try_display!(String::from_utf8(serialized),
                     "Error converting serialized HTML to UTF-8 string"))
 }
