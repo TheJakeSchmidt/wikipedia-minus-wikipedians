@@ -1,6 +1,5 @@
 #![feature(plugin)]
 #![plugin(regex_macros)]
-#![feature(collections)]
 
 extern crate argparse;
 extern crate html5ever;
