@@ -197,8 +197,11 @@ impl Handler for WikipediaMinusWikipediansHandler {
                     // TODO: create an Error type to pass around, so this can distinguish different
                     // types of error (if that would be helpful).
                     // TODO: create a better error page
-                    Err(msg) => Response::with(
-                        (iron::status::InternalServerError, "<html><body>ERROR</body></html>")),
+                    Err(msg) => {
+                        warn!("Failed to get page with vandalism restored: {}", msg);
+                        Response::with(
+                            (iron::status::InternalServerError, "<html><body>ERROR</body></html>"))
+                    },
                 };
             response.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
             Ok(response)
@@ -232,6 +235,7 @@ impl Handler for WikipediaMinusWikipediansHandler {
                         }
                     },
                     Err(error) => {
+                        warn!("Error calling Wikipedia: {}", error);
                         let mut response = Response::with(
                             (iron::status::InternalServerError,
                              "<html><body>ERROR: {}</body></html>"));
