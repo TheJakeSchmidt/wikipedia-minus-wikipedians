@@ -10,6 +10,7 @@ use ::json::JsonPathElement::{Key, Only};
 
 pub struct Wiki {
     pub hostname: String,
+    pub port: u16,
     client: Client,
 }
 
@@ -22,8 +23,8 @@ pub struct Revision {
 
 impl Wiki {
     /// Constructs a Wiki object representing the wiki at `hostname` (e.g. "en.wikipedia.org").
-    pub fn new(hostname: String, client: Client) -> Wiki {
-        Wiki { hostname: hostname, client: client }
+    pub fn new(hostname: String, port: u16, client: Client) -> Wiki {
+        Wiki { hostname: hostname, port: port, client: client }
     }
 
     /// Calls the MediaWiki API with the given parameters and format=json. Returns the raw JSON.

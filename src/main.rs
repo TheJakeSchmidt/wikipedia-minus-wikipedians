@@ -210,7 +210,9 @@ impl Handler for WikipediaMinusWikipediansHandler {
             // TODO: Maybe should be moved to wiki module.
             let mut url = request.url.clone();
             url.host = url::Host::Domain(self.wiki.hostname.clone());
-            match self.client.get(&url.into_generic_url().serialize())
+            url.port = self.wiki.port;
+            let url = url.into_generic_url().serialize();
+            match self.client.get(&url)
                 .header(Connection::close()).send() {
                     Ok(mut wikipedia_response) => {
                         let mut wikipedia_body: Vec<u8> = Vec::new();
@@ -235,7 +237,7 @@ impl Handler for WikipediaMinusWikipediansHandler {
                         }
                     },
                     Err(error) => {
-                        warn!("Error calling Wikipedia: {}", error);
+                        warn!("Error reading URL {}: {}", url, error);
                         let mut response = Response::with(
                             (iron::status::InternalServerError,
                              "<html><body>ERROR: {}</body></html>"));
@@ -257,12 +259,20 @@ fn main() {
         let mut parser = ArgumentParser::new();
         parser.set_description("TODO: Usage description");
         parser.refer(&mut port).add_option(&["-p", "--port"], Store, "The port to serve HTTP on.");
-        parser.refer(&mut wiki).add_option(&["--wiki"], Store, "The wiki to mirror.");
+        parser.refer(&mut wiki).add_option(
+            &["--wiki"], Store, "The hostname or hostname:port of the wiki to mirror.");
         parser.parse_args_or_exit();
     }
+    let mut wiki_components = wiki.split(":");
+    let wiki_hostname = wiki_components.next().unwrap();
+    let wiki_port = match wiki_components.next() {
+        Some(port) => port.parse::<u16>().unwrap(),
+        None => 443,
+    };
+
     let handler =
-        WikipediaMinusWikipediansHandler::new(Wiki::new(wiki.to_string(), Client::new()),
-                                              Client::new());
+        WikipediaMinusWikipediansHandler::new(
+            Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new()), Client::new());
     Iron::new(handler).http(("localhost", port)).unwrap();
 }
 
