@@ -211,20 +211,32 @@ impl Handler for WikipediaMinusWikipediansHandler {
                 .header(Connection::close()).send() {
                     Ok(mut wikipedia_response) => {
                         let mut wikipedia_body: Vec<u8> = Vec::new();
-                        wikipedia_response.read_to_end(&mut wikipedia_body);
-
-                        let mut response = Response::with(wikipedia_body);
-                        response.status = Some(wikipedia_response.status);
-                        response.headers = wikipedia_response.headers.clone();
-                        info!("Forwarded request for {} to {}", request.url.path.join("/"),
-                              self.wiki.hostname);
-                        Ok(response)
+                        match wikipedia_response.read_to_end(&mut wikipedia_body) {
+                            Ok(..) => {
+                                let mut response = Response::with(wikipedia_body);
+                                response.status = Some(wikipedia_response.status);
+                                response.headers = wikipedia_response.headers.clone();
+                                info!("Forwarded request for {} to {}", request.url.path.join("/"),
+                                      self.wiki.hostname);
+                                Ok(response)
+                            },
+                            Err(error) => {
+                                warn!("Error reading Wikipedia response: {}", error);
+                                let mut response = Response::with(
+                                    (iron::status::InternalServerError,
+                                     "<html><body>ERROR</body></html>"));
+                                response.headers.set(
+                                    ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+                                Ok(response)
+                            }
+                        }
                     },
                     Err(error) => {
                         let mut response = Response::with(
                             (iron::status::InternalServerError,
-                             format!("<html><body>ERROR: {}</body></html>", error)));
-                        response.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+                             "<html><body>ERROR: {}</body></html>"));
+                        response.headers.set(
+                            ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
                         Ok(response)
                     }
                 }
