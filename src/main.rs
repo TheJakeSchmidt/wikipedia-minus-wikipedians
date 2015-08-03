@@ -111,16 +111,11 @@ fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder:
 
 fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
     fn has_matching_id(attributes: &Vec<Attribute>, id: &str) -> bool {
-        // TODO: could also do this with filter() and is_empty(). Not sure if that would be better.
-        for attribute in attributes {
+        return attributes.into_iter().any(
             // TODO: do I seriously have to construct a StrTendril here?
             // There has to be a better way.
-            if attribute.name.local.as_slice() == "id" &&
-                attribute.value == tendril::StrTendril::from_str(id).unwrap() {
-                    return true;
-                }
-        }
-        return false;
+            |attribute| attribute.name.local.as_slice() == "id" &&
+                attribute.value == tendril::StrTendril::from_str(id).unwrap());
     }
 
     let node = handle.borrow();
