@@ -31,7 +31,6 @@ mod wiki;
 
 use argparse::ArgumentParser;
 use argparse::Store;
-//use collections::borrow::Borrow;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
