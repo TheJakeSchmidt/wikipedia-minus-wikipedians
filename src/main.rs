@@ -208,6 +208,7 @@ impl Handler for WikipediaMinusWikipediansHandler {
             // TODO: should I use an HTTP redirect here instead? Would that work? Would it be desirable?
             // TODO: Maybe should be moved to wiki module.
             let mut url = request.url.clone();
+            url.scheme = "https".to_string();
             url.host = url::Host::Domain(self.wiki.hostname.clone());
             url.port = self.wiki.port;
             let url = url.into_generic_url().serialize();
@@ -217,11 +218,11 @@ impl Handler for WikipediaMinusWikipediansHandler {
                         let mut wikipedia_body: Vec<u8> = Vec::new();
                         match wikipedia_response.read_to_end(&mut wikipedia_body) {
                             Ok(..) => {
+                                info!("Received {} response from {}", wikipedia_response.status,
+                                      url);
                                 let mut response = Response::with(wikipedia_body);
                                 response.status = Some(wikipedia_response.status);
                                 response.headers = wikipedia_response.headers.clone();
-                                info!("Forwarded request for {} to {}", request.url.path.join("/"),
-                                      self.wiki.hostname);
                                 Ok(response)
                             },
                             Err(error) => {
