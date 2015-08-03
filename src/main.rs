@@ -201,9 +201,10 @@ impl Handler for WikipediaMinusWikipediansHandler {
             Ok(response)
         } else {
             // TODO: should I use an HTTP redirect here instead? Would that work? Would it be desirable?
-            // TODO: not good enough. Needs to include query string. Maybe should be moved to wiki module.
-            match self.client.get(
-                &format!("https://{}/{}", self.wiki.hostname, request.url.path.join("/")))
+            // TODO: Maybe should be moved to wiki module.
+            let mut url = request.url.clone();
+            url.host = url::Host::Domain(self.wiki.hostname.clone());
+            match self.client.get(&url.into_generic_url().serialize())
                 .header(Connection::close()).send() {
                     Ok(mut wikipedia_response) => {
                         let mut wikipedia_body: Vec<u8> = Vec::new();
