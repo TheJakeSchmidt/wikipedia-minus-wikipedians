@@ -61,7 +61,6 @@ use wiki::Wiki;
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
 
-// TODO: I'm not so sure these parameter names aren't terrible.
 /// Does a 3-way merge, merging `new1` and `new2` under the assumption that both diverged from
 /// `old`. Returns None if the strings do not merge together cleanly.
 fn merge(old: &str, new1: &str, new2: &str) -> Result<Option<String>, String> {
