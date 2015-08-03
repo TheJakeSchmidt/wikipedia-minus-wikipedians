@@ -10,6 +10,7 @@ extern crate iron;
 #[macro_use]
 extern crate log;
 extern crate log4rs;
+extern crate rand;
 extern crate regex;
 extern crate rustc_serialize;
 extern crate tempfile;
@@ -177,11 +178,11 @@ impl WikipediaMinusWikipediansHandler {
         let body = try!(self.wiki.parse_wikitext(&canonical_title, &accumulated_contents));
         // Note: "title" rather than "canonical_title", so that redirects look right.
         let current_page_contents = try!(self.wiki.get_current_page_content(&title));
-        // TODO: randomize the placeholder string per-request
+        let placeholder = format!("WMW_PLACEHOLDER_TEXT_{}", rand::random::<u64>());
         let page_contents_with_placeholder =
             try!(replace_node_with_placeholder(
-                &current_page_contents, "mw-content-text", "WMW_PLACEHOLDER_TEXT"));
-        Ok(page_contents_with_placeholder.replace("WMW_PLACEHOLDER_TEXT", &body))
+                &current_page_contents, "mw-content-text", &placeholder));
+        Ok(page_contents_with_placeholder.replace(&placeholder, &body))
     }
 }
 
