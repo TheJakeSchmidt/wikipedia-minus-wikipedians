@@ -32,22 +32,25 @@ impl Wiki {
             parameters.into_iter().map(|p| format!("{}={}", p.0, p.1))
             .collect::<Vec<_>>().join("&") + "&format=json";
 
-        let mut response = self.client.post(&format!("https://{}/w/api.php", self.hostname))
-            .body(&post_body)
-            .header(Connection::close())
-            .send().unwrap();
-
+        let mut response = try_display!(
+            self.client.post(&format!("https://{}/w/api.php", self.hostname))
+                .body(&post_body).header(Connection::close()).send(), "Error calling Wikimedia API");
         let mut body = String::new();
-        response.read_to_string(&mut body).unwrap();
-        Ok(body)
+        match response.read_to_string(&mut body) {
+            Ok(..) => Ok(body),
+            Err(error) =>
+                Err(format!("Error converting Wikimedia API response to UTF-8: {}", error)),
+        }
     }
 
     /// Returns the last `limit` revisions for the page `title`.
     pub fn get_revisions(&self, title: &str, limit: u64) -> Result<Vec<Revision>, String> {
-        let json_str = self.call_mediawiki_api(
+        let json_str = try!(self.call_mediawiki_api(
             vec![("action", "query"), ("prop", "revisions"), ("titles", title),
-                 ("rvprop", "comment|ids"), ("rvlimit", &limit.to_string())]).unwrap();
-        let json = Json::from_str(&json_str).unwrap();
+                 ("rvprop", "comment|ids"), ("rvlimit", &limit.to_string())]));
+        let json = try_display!(
+            Json::from_str(&json_str),
+            "Error parsing API response for {} revisions of \"{}\"", limit, title);
         let revisions_json = try!(
             json::get_json_array(&json, &[Key("query"), Key("pages"), Only, Key("revisions")]));
 
@@ -66,38 +69,31 @@ impl Wiki {
     /// Returns the latest revision ID for the page `title`.
     pub fn get_latest_revision(&self, title: &str) -> Result<Revision, String> {
         let mut revisions = try!(self.get_revisions(title, 1));
-        if !revisions.is_empty() {
-            Ok(revisions.pop().unwrap())
-        } else {
-            Err(format!("No revisions found for page \"{}\"", title))
-        }
+        revisions.pop().ok_or(format!("No revisions found for page \"{}\"", title))
     }
 
     /// Returns the contents of the page `title` as of (i.e., immediately after) revision `id`.
     pub fn get_revision_content(&self, title: &str, id: u64) -> Result<String, String> {
-        let json_str = self.call_mediawiki_api(
+        let json_str = try!(self.call_mediawiki_api(
             vec![("action", "query"), ("prop", "revisions"), ("titles", title), ("rvprop", "content"),
-                 ("rvlimit", "1"), ("rvstartid", &id.to_string())]).unwrap();
-        let json = Json::from_str(&json_str).unwrap();
-        match json::get_json_string(
-            &json, &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")]) {
-            Ok(content) => Ok(content.to_string()),
-            Err(msg) => Err(msg),
-        }
+                 ("rvlimit", "1"), ("rvstartid", &id.to_string())]));
+        let json = try_display!(
+            Json::from_str(&json_str),
+            "Error parsing API response for content of \"{}\" revision {}", title, id);
+        Ok(try!(json::get_json_string(
+            &json,
+            &[Key("query"), Key("pages"), Only, Key("revisions"), Only, Key("*")])).to_string())
     }
 
     /// Follows all redirects to find the canonical name of the page at `title`.
     pub fn get_canonical_title(&self, title: &str) -> Result<String, String> {
-        let latest_revision_id = self.get_latest_revision(title).unwrap().revid;
-        let page_contents = self.get_revision_content(title, latest_revision_id).unwrap();
+        let latest_revision_id = try!(self.get_latest_revision(title)).revid;
+        let page_contents = try!(self.get_revision_content(title, latest_revision_id));
 
         let regex = regex!(r"#REDIRECT \[\[([^]]+)\]\].*");
         match regex.captures(&page_contents) {
             Some(captures) => self.get_canonical_title(captures.at(1).unwrap()),
-            None => {
-                info!("Canonical page title is \"{}\"", title);
-                Ok(title.to_string())
-            },
+            None => Ok(title.to_string()),
         }
     }
 
@@ -107,27 +103,27 @@ impl Wiki {
         let encoded_wikitext =
             percent_encoding::percent_encode(
                 wikitext.as_bytes(), percent_encoding::FORM_URLENCODED_ENCODE_SET);
-        let response = self.call_mediawiki_api(
+        let response = try!(self.call_mediawiki_api(
             vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
-                 ("title", title), ("text", &encoded_wikitext)]).unwrap();
+                 ("title", title), ("text", &encoded_wikitext)]));
         // TODO: check return value
-        let json = Json::from_str(&response).unwrap();
-        match json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")]) {
-            Ok(contents) => Ok(contents.to_string()),
-            Err(message) => Err(message),
-        }
+        let json = try_display!(
+            Json::from_str(&response),
+            "Error parsing API response for parsing merged wikitext of \"{}\"", title);
+        Ok(try!(json::get_json_string(&json, &[Key("parse"), Key("text"), Key("*")])).to_string())
     }
 
     /// Gets the current, fully-rendered (**HTML**) contents of the page `title`.
-    pub fn get_current_page_content(&self, title: &str) -> String {
-        let mut res = self.client.get(
-            &format!("https://{}/wiki/{}", self.hostname, title))
-            .header(Connection::close())
-            .send().unwrap();
-
+    pub fn get_current_page_content(&self, title: &str) -> Result<String, String> {
+        let url = format!("https://{}/wiki/{}", self.hostname, title);
+        let mut response =
+            try_display!(
+                self.client.get(&url).header(Connection::close()).send(),
+                "Error fetching URL {}", url);
         let mut body = String::new();
-        res.read_to_string(&mut body).unwrap();
-
-        body
+        match response.read_to_string(&mut body) {
+            Ok(..) => Ok(body),
+            Err(error) => Err(format!("{}", error))
+        }
     }
 }

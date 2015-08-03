@@ -109,14 +109,9 @@ pub fn get_json_array<'a>(json: &'a Json, path: &[JsonPathElement]) -> Result<&'
 /// Returns the number found at `path` inside `json`.
 pub fn get_json_number(json: &Json, path: &[JsonPathElement]) -> Result<u64, String> {
     match get_json_value(json, path, 0) {
-        Ok(ref value) => {
-            if value.is_number() {
-                Ok(value.as_u64().unwrap())
-            } else {
-                Err(format!("Asked for number {}, but value is not a number",
-                            pretty_print(&path[..])))
-            }
-        },
+        Ok(ref value) =>
+            value.as_u64().ok_or(format!(
+                "Asked for number {}, but value is not a number", pretty_print(&path[..]))),
         Err(message) => Err(message),
     }
 }

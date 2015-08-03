@@ -15,6 +15,16 @@ extern crate tempfile;
 extern crate tendril;
 extern crate url;
 
+/// Helper macro for unwrapping Result values whose E types implement std::fmt::Display. For Ok(),
+/// evaluates to the contained value. For Err(), returns early with an Err containing the formatted
+/// error.
+macro_rules! try_display {
+    ($expr:expr, $($format_arg:expr),* ) => (match $expr {
+        Ok(val) => val,
+        Err(err) => return Err(format!("{}: {}", format!($($format_arg),*), err)),
+    })
+}
+
 mod json;
 mod wiki;
 
@@ -50,41 +60,38 @@ use wiki::Wiki;
 
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
-// TODO: there are some places where I've handrolled try!() equivalents. Fix those.
-// TODO: make sure I'm returning Results everywhere, and propagating errors correctly. Remove all
-// uses of unwrap() that might panic.
 
 // TODO: I'm not so sure these parameter names aren't terrible.
-// TODO: would Result make more sense than Option for this return value?
 /// Does a 3-way merge, merging `new1` and `new2` under the assumption that both diverged from
 /// `old`. Returns None if the strings do not merge together cleanly.
-fn merge(old: &str, new1: &str, new2: &str) -> Option<String> {
-    fn write_to_temp_file(contents: &str) -> NamedTempFile {
-        let tempfile = NamedTempFile::new().unwrap();
-        let mut file = OpenOptions::new().write(true).open(tempfile.path()).unwrap();
-        file.write_all(contents.as_bytes()).unwrap();
-        file.flush().unwrap();
-        tempfile
+fn merge(old: &str, new1: &str, new2: &str) -> Result<Option<String>, String> {
+    fn write_to_temp_file(contents: &str) -> Result<NamedTempFile, String> {
+        let tempfile = try_display!(NamedTempFile::new(), "Error creating temp file");
+        let mut file = try_display!(OpenOptions::new().write(true).open(tempfile.path()),
+                                    "Error opening temp file for writing");
+        try_display!(file.write_all(contents.as_bytes()), "Error writing to temp file");
+        try_display!(file.flush(), "Error flushing temp file");
+        Ok(tempfile)
     }
 
-    let old_tempfile = write_to_temp_file(old);
-    let new1_tempfile = write_to_temp_file(new1);
-    let new2_tempfile = write_to_temp_file(new2);
+    let old_tempfile = try!(write_to_temp_file(old));
+    let new1_tempfile = try!(write_to_temp_file(new1));
+    let new2_tempfile = try!(write_to_temp_file(new2));
 
     let mut process = Command::new("diff3");
     process.arg("-m").args(&[new1_tempfile.path(), old_tempfile.path(), new2_tempfile.path()])
         .stdout(Stdio::piped()).stderr(Stdio::null());
-    let output = process.output().unwrap();
+    let output = try_display!(process.output(), "Error getting output from diff3 subprocess");
     if output.status.success() {
-        Some(String::from_utf8(output.stdout).unwrap())
+        Ok(Some(try_display!(String::from_utf8(output.stdout),
+                             "Error converting diff3 output to UTF-8")))
     } else {
-        None
+        Ok(None)
     }
 }
 
 fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder: &str)
     -> Result<String, String> {
-    // TODO: check errors
     let html = tendril::StrTendril::from_str(original_html).unwrap();
     let mut dom: RcDom = html5ever::parse(html5ever::one_input(html), Default::default());
 
@@ -99,8 +106,8 @@ fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder:
                    tendril::StrTendril::from_str(placeholder).unwrap()));
     let mut serialized: Vec<u8> = vec![];
     html5ever::serialize::serialize(&mut serialized, &dom.document, Default::default());
-    // TODO: error handling
-    Ok(String::from_utf8(serialized).unwrap())
+    Ok(try_display!(String::from_utf8(serialized),
+                    "Error converting serialized HTML to UTF-8 string"))
 }
 
 fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
@@ -146,43 +153,46 @@ impl WikipediaWithoutWikipedians {
 
     /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
     fn get_vandalism_reversions(&self, title: &str) -> Result<Vec<Revision>, String> {
+        // TODO: Add a flag to control number of revisions, and experiment with it.
         let revisions = try!(self.wiki.get_revisions(title, 60));
         Ok(revisions.into_iter().filter(|revision| revision.comment.contains("vandal")).collect())
     }
 
     // TODO: this name is terrible.
     fn get_page_with_vandalism_restored(&self, title: &str) -> Result<String, String> {
-        let canonical_title = self.wiki.get_canonical_title(title).unwrap();
+        let canonical_title = try!(self.wiki.get_canonical_title(title));
+        info!("Canonical page title for \"{}\" is \"{}\"", title, canonical_title);
 
-        let latest_revid = self.wiki.get_latest_revision(&canonical_title).unwrap().revid;
+        let latest_revid = try!(self.wiki.get_latest_revision(&canonical_title)).revid;
         let mut accumulated_contents =
-            self.wiki.get_revision_content(&canonical_title, latest_revid).unwrap();
+            try!(self.wiki.get_revision_content(&canonical_title, latest_revid));
         let mut revisions = vec![];
-        for revision in self.get_vandalism_reversions(&canonical_title).ok().unwrap() {
+        for revision in try!(self.get_vandalism_reversions(&canonical_title)) {
             let reverted_contents =
-                self.wiki.get_revision_content(&canonical_title, revision.revid).unwrap();
+                try!(self.wiki.get_revision_content(&canonical_title, revision.revid));
             let vandalized_contents =
-                self.wiki.get_revision_content(&canonical_title, revision.parentid).unwrap();
+                try!(self.wiki.get_revision_content(&canonical_title, revision.parentid));
             match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
-                Some(merged_contents) => {
-                    info!(
-                        concat!("For page \"{}\", restored vandalism ",
-                                "https://{}/w/index.php?title={}&diff=prev&oldid={}"),
-                        &title, self.wiki.hostname, &canonical_title, revision.revid);
+                Ok(Some(merged_contents)) => {
+                    info!(concat!("For page \"{}\", restored vandalism ",
+                                  "https://{}/w/index.php?title={}&diff=prev&oldid={}"),
+                          &title, self.wiki.hostname, &canonical_title, revision.revid);
                     accumulated_contents = merged_contents;
                     revisions.push(revision.revid);
                 }
-                None => (),
+                Ok(None) => (),
+                Err(msg) => return Err(format!("Error merging revision {} of \"{}\": {}",
+                                               revision.revid, title, msg))
             }
         }
 
-        let body = self.wiki.parse_wikitext(&canonical_title, &accumulated_contents).unwrap();
+        let body = try!(self.wiki.parse_wikitext(&canonical_title, &accumulated_contents));
         // Note: "title" rather than "canonical_title", so that redirects look right.
-        let current_page_contents = self.wiki.get_current_page_content(&title);
+        let current_page_contents = try!(self.wiki.get_current_page_content(&title));
         // TODO: randomize the placeholder string per-request
         let page_contents_with_placeholder =
-            replace_node_with_placeholder(
-                &current_page_contents, "mw-content-text", "WMW_PLACEHOLDER_TEXT").unwrap();
+            try!(replace_node_with_placeholder(
+                &current_page_contents, "mw-content-text", "WMW_PLACEHOLDER_TEXT"));
         Ok(page_contents_with_placeholder.replace("WMW_PLACEHOLDER_TEXT", &body))
     }
 }
@@ -190,29 +200,42 @@ impl WikipediaWithoutWikipedians {
 impl Handler for WikipediaWithoutWikipedians {
     fn handle(&self, request: &mut Request) -> IronResult<Response> {
         if request.url.path.len() == 2 && request.url.path[0] == "wiki" {
-            let mut response = Response::with(
-                (iron::status::Ok,
-                 self.get_page_with_vandalism_restored(&request.url.path[1]).unwrap()));
+            let mut response =
+                match self.get_page_with_vandalism_restored(&request.url.path[1]) {
+                    Ok(page_contents) => Response::with((iron::status::Ok, page_contents)),
+                    // TODO: create an Error type to pass around, so this can distinguish different
+                    // types of error (if that would be helpful).
+                    // TODO: create a better error page
+                    Err(msg) => Response::with(
+                        (iron::status::InternalServerError, "<html><body>ERROR</body></html>")),
+                };
             response.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
             Ok(response)
         } else {
             // TODO: should I use an HTTP redirect here instead? Would that work? Would it be desirable?
-            // TODO: error handling
-            let mut wikipedia_response =
-                // TODO: not good enough. Needs to include query string. Maybe should be moved to wiki module.
-                self.client.get(
-                    &format!("https://{}/{}", self.wiki.hostname, request.url.path.join("/")))
-                .header(Connection::close())
-                .send().unwrap();
-            let mut wikipedia_body: Vec<u8> = Vec::new();
-            wikipedia_response.read_to_end(&mut wikipedia_body);
+            // TODO: not good enough. Needs to include query string. Maybe should be moved to wiki module.
+            match self.client.get(
+                &format!("https://{}/{}", self.wiki.hostname, request.url.path.join("/")))
+                .header(Connection::close()).send() {
+                    Ok(mut wikipedia_response) => {
+                        let mut wikipedia_body: Vec<u8> = Vec::new();
+                        wikipedia_response.read_to_end(&mut wikipedia_body);
 
-            let mut response = Response::with(wikipedia_body);
-            response.status = Some(wikipedia_response.status);
-            response.headers = wikipedia_response.headers.clone();
-            info!("Forwarded request for {} to {}", request.url.path.join("/"),
-                  self.wiki.hostname);
-            Ok(response)
+                        let mut response = Response::with(wikipedia_body);
+                        response.status = Some(wikipedia_response.status);
+                        response.headers = wikipedia_response.headers.clone();
+                        info!("Forwarded request for {} to {}", request.url.path.join("/"),
+                              self.wiki.hostname);
+                        Ok(response)
+                    },
+                    Err(error) => {
+                        let mut response = Response::with(
+                            (iron::status::InternalServerError,
+                             format!("<html><body>ERROR: {}</body></html>", error)));
+                        response.headers.set(ContentType(Mime(TopLevel::Text, SubLevel::Html, vec![])));
+                        Ok(response)
+                    }
+                }
         }
     }
 }
@@ -243,7 +266,8 @@ mod tests {
         let old = "First line.\n\nSecond line.\n";
         let new1 = "First line.\n\nSecond line changed.\n";
         let new2 = "First line changed.\n\nSecond line.\n";
-        assert_eq!("First line changed.\n\nSecond line changed.\n", merge(old, new1, new2).unwrap());
+        assert_eq!(Some("First line changed.\n\nSecond line changed.\n".to_string()),
+                   merge(old, new1, new2).unwrap());
     }
 
     #[test]
@@ -251,7 +275,7 @@ mod tests {
         let old = "First line.\n\nSecond line.\n";
         let new1 = "First line.\n\nSecond line changed one way.\n";
         let new2 = "First line changed.\n\nSecond line changed a different way.\n";
-        assert_eq!(None, merge(old, new1, new2));
+        assert_eq!(None, merge(old, new1, new2).unwrap());
     }
 
     #[test]
@@ -259,7 +283,8 @@ mod tests {
         let old = "First line.\n\nSecond line.\n";
         let new1 = "First line.\n\nSecond line 𐅃.\n";
         let new2 = "First line さようなら.\n\nSecond line.\n";
-        assert_eq!("First line さようなら.\n\nSecond line 𐅃.\n", merge(old, new1, new2).unwrap());
+        assert_eq!(Some("First line さようなら.\n\nSecond line 𐅃.\n".to_string()),
+                   merge(old, new1, new2).unwrap());
     }
 
     #[test]
