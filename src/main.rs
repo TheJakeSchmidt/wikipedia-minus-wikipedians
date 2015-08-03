@@ -155,25 +155,26 @@ impl WikipediaMinusWikipediansHandler {
         let latest_revid = try!(self.wiki.get_latest_revision(&canonical_title)).revid;
         let mut accumulated_contents =
             try!(self.wiki.get_revision_content(&canonical_title, latest_revid));
-        let mut revisions = vec![];
-        for revision in try!(self.get_vandalism_reversions(&canonical_title)) {
+        let mut merged_revisions = vec![];
+        let vandalism_reversions = try!(self.get_vandalism_reversions(&canonical_title));
+        for revision in &vandalism_reversions {
             let reverted_contents =
                 try!(self.wiki.get_revision_content(&canonical_title, revision.revid));
             let vandalized_contents =
                 try!(self.wiki.get_revision_content(&canonical_title, revision.parentid));
             match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
                 Ok(Some(merged_contents)) => {
-                    info!(concat!("For page \"{}\", restored vandalism ",
-                                  "https://{}/w/index.php?title={}&diff=prev&oldid={}"),
-                          &title, self.wiki.hostname, &canonical_title, revision.revid);
                     accumulated_contents = merged_contents;
-                    revisions.push(revision.revid);
+                    merged_revisions.push(revision.revid);
                 }
                 Ok(None) => (),
                 Err(msg) => return Err(format!("Error merging revision {} of \"{}\": {}",
                                                revision.revid, title, msg))
             }
         }
+
+        info!("For \"{}\", successfully merged {} of {} possible vandalisms: {:?}", title,
+              merged_revisions.len(), vandalism_reversions.len(), merged_revisions);
 
         let body = try!(self.wiki.parse_wikitext(&canonical_title, &accumulated_contents));
         // Note: "title" rather than "canonical_title", so that redirects look right.
