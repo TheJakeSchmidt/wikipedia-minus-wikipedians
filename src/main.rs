@@ -129,15 +129,14 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
     }
 }
 
-// TODO: rename?
-struct WikipediaWithoutWikipedians {
+struct WikipediaMinusWikipediansHandler {
     wiki: Wiki,
     client: Client
 }
 
-impl WikipediaWithoutWikipedians {
-    fn new(wiki: Wiki, client: Client) -> WikipediaWithoutWikipedians {
-        WikipediaWithoutWikipedians { wiki: wiki, client: client }
+impl WikipediaMinusWikipediansHandler {
+    fn new(wiki: Wiki, client: Client) -> WikipediaMinusWikipediansHandler {
+        WikipediaMinusWikipediansHandler { wiki: wiki, client: client }
     }
 
     /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
@@ -186,7 +185,7 @@ impl WikipediaWithoutWikipedians {
     }
 }
 
-impl Handler for WikipediaWithoutWikipedians {
+impl Handler for WikipediaMinusWikipediansHandler {
     fn handle(&self, request: &mut Request) -> IronResult<Response> {
         if request.url.path.len() == 2 && request.url.path[0] == "wiki" {
             let mut response =
@@ -241,9 +240,10 @@ fn main() {
         parser.refer(&mut wiki).add_option(&["--wiki"], Store, "The wiki to mirror.");
         parser.parse_args_or_exit();
     }
-    let wikipedia_without_wikipedians =
-        WikipediaWithoutWikipedians::new(Wiki::new(wiki.to_string(), Client::new()), Client::new());
-    Iron::new(wikipedia_without_wikipedians).http(("localhost", port)).unwrap();
+    let handler =
+        WikipediaMinusWikipediansHandler::new(Wiki::new(wiki.to_string(), Client::new()),
+                                              Client::new());
+    Iron::new(handler).http(("localhost", port)).unwrap();
 }
 
 #[cfg(test)]
