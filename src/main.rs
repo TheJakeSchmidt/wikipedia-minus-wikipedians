@@ -10,6 +10,7 @@ extern crate iron;
 extern crate log;
 extern crate log4rs;
 extern crate rand;
+extern crate redis;
 extern crate regex;
 extern crate rustc_serialize;
 extern crate tempfile;
@@ -278,12 +279,20 @@ fn main() {
 
     let mut port = 3000;
     let mut wiki = "en.wikipedia.org".to_string();
+    let mut redis_hostname = "".to_string();
+    let mut redis_port = 6379;
     {
         let mut parser = ArgumentParser::new();
         parser.set_description("TODO: Usage description");
         parser.refer(&mut port).add_option(&["-p", "--port"], Store, "The port to serve HTTP on.");
         parser.refer(&mut wiki).add_option(
             &["--wiki"], Store, "The hostname or hostname:port of the wiki to mirror.");
+        parser.refer(&mut redis_hostname).add_option(
+            &["--redis_hostname"], Store,
+            "The hostname of the Redis server to use. Leave blank to disable Redis.");
+        parser.refer(&mut redis_port).add_option(
+            &["--redis_port"], Store,
+            "The port of the Redis server to use. Ignored if --redis_hostname is blank.");
         parser.parse_args_or_exit();
     }
     let mut wiki_components = wiki.split(":");
@@ -293,9 +302,20 @@ fn main() {
         None => 443,
     };
 
+    let redis_connection_info = if redis_hostname == "" {
+        None
+    } else {
+        Some(redis::ConnectionInfo {
+            addr: Box::new(redis::ConnectionAddr::Tcp(redis_hostname, redis_port)),
+            db: 0,
+            passwd: None,
+        })
+    };
+
     let handler =
         WikipediaMinusWikipediansHandler::new(
-            Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new()), Client::new());
+            Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new(), redis_connection_info),
+            Client::new());
     Iron::new(handler).http(("localhost", port)).unwrap();
 }
 
