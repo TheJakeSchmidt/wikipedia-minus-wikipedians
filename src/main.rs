@@ -14,6 +14,7 @@ extern crate regex;
 extern crate rustc_serialize;
 extern crate tempfile;
 extern crate tendril;
+extern crate time;
 extern crate url;
 
 /// Helper macro for unwrapping Result values whose E types implement std::fmt::Display. For Ok(),
@@ -61,6 +62,28 @@ use wiki::Wiki;
 
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
+
+/// A struct that uses RAII to log durations: when dropped, it logs the number of milliseconds it
+/// existed, prefixed by `name`.
+struct Timer {
+    name: String,
+    start_time_ns: u64
+}
+
+impl Timer {
+    fn new(name: String) -> Timer {
+        Timer {
+            name: name,
+            start_time_ns: time::precise_time_ns(),
+        }
+    }
+}
+
+impl Drop for Timer {
+    fn drop(&mut self) {
+        info!("{}: {} ms", self.name, (time::precise_time_ns() - self.start_time_ns) / 1_000_000);
+    }
+}
 
 /// Does a 3-way merge, merging `new1` and `new2` under the assumption that both diverged from
 /// `old`. Returns None if the strings do not merge together cleanly.

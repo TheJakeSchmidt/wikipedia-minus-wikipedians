@@ -46,6 +46,7 @@ impl Wiki {
 
     /// Returns the last `limit` revisions for the page `title`.
     pub fn get_revisions(&self, title: &str, limit: u64) -> Result<Vec<Revision>, String> {
+        let _timer = ::Timer::new(format!("Got {} revisions of \"{}\"", limit, &title));
         let json_str = try!(self.call_mediawiki_api(
             vec![("action", "query"), ("prop", "revisions"), ("titles", title),
                  ("rvprop", "comment|ids"), ("rvlimit", &limit.to_string())]));
@@ -69,12 +70,15 @@ impl Wiki {
 
     /// Returns the latest revision ID for the page `title`.
     pub fn get_latest_revision(&self, title: &str) -> Result<Revision, String> {
+        let _timer = ::Timer::new(format!("Got latest revision of \"{}\"", &title));
         let mut revisions = try!(self.get_revisions(title, 1));
         revisions.pop().ok_or(format!("No revisions found for page \"{}\"", title))
     }
 
     /// Returns the contents of the page `title` as of (i.e., immediately after) revision `id`.
     pub fn get_revision_content(&self, title: &str, id: u64) -> Result<String, String> {
+        let _timer = ::Timer::new(format!("Got content of revision {} of \"{}\"", &id, &title));
+
         let json_str = try!(self.call_mediawiki_api(
             vec![("action", "query"), ("prop", "revisions"), ("titles", title), ("rvprop", "content"),
                  ("rvlimit", "1"), ("rvstartid", &id.to_string())]));
@@ -88,6 +92,7 @@ impl Wiki {
 
     /// Follows all redirects to find the canonical name of the page at `title`.
     pub fn get_canonical_title(&self, title: &str) -> Result<String, String> {
+        let _timer = ::Timer::new(format!("Got canonical title of \"{}\"", &title));
         let latest_revision_id = try!(self.get_latest_revision(title)).revid;
         let page_contents = try!(self.get_revision_content(title, latest_revision_id));
 
@@ -101,13 +106,13 @@ impl Wiki {
     /// Parses the wikitext in `wikitext` as though it were the contents of the page `title`,
     /// returning the rendered HTML.
     pub fn parse_wikitext(&self, title: &str, wikitext: &str) -> Result<String, String> {
+        let _timer = ::Timer::new(format!("Parsed wikitext for \"{}\"", &title));
         let encoded_wikitext =
             percent_encoding::percent_encode(
                 wikitext.as_bytes(), percent_encoding::FORM_URLENCODED_ENCODE_SET);
         let response = try!(self.call_mediawiki_api(
-            vec![("action", "parse"), ("prop", "text"), ("disablepp", ""), ("contentmodel", "wikitext"),
-                 ("title", title), ("text", &encoded_wikitext)]));
-        // TODO: check return value
+            vec![("action", "parse"), ("prop", "text"), ("disablepp", ""),
+                 ("contentmodel", "wikitext"), ("title", title), ("text", &encoded_wikitext)]));
         let json = try_display!(
             Json::from_str(&response),
             "Error parsing API response for parsing merged wikitext of \"{}\"", title);
@@ -116,6 +121,7 @@ impl Wiki {
 
     /// Gets the current, fully-rendered (**HTML**) contents of the page `title`.
     pub fn get_current_page_content(&self, title: &str) -> Result<String, String> {
+        let _timer = ::Timer::new(format!("Got current HTML contents of \"{}\"", &title));
         let url = format!("https://{}/wiki/{}", self.hostname, title);
         let mut response =
             try_display!(
