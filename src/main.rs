@@ -164,7 +164,7 @@ impl WikipediaMinusWikipediansHandler {
     }
 
     /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
-    fn get_vandalism_reversions(&self, title: &str) -> Result<Vec<Revision>, String> {
+    fn get_antivandalism_revisions(&self, title: &str) -> Result<Vec<Revision>, String> {
         let revisions = try!(self.wiki.get_revisions(title, 500));
         Ok(revisions.into_iter().filter(|revision| revision.comment.contains("vandal")).collect())
     }
@@ -174,12 +174,13 @@ impl WikipediaMinusWikipediansHandler {
         let canonical_title = try!(self.wiki.get_canonical_title(title));
         info!("Canonical page title for \"{}\" is \"{}\"", title, canonical_title);
 
-        let latest_revid = try!(self.wiki.get_latest_revision(&canonical_title)).revid;
+        let latest_revision = try!(self.wiki.get_latest_revision(&canonical_title));
+        let antivandalism_revisions = try!(self.get_antivandalism_revisions(&canonical_title));
+
         let mut accumulated_contents =
-            try!(self.wiki.get_revision_content(&canonical_title, latest_revid));
+            try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid));
         let mut merged_revisions = vec![];
-        let vandalism_reversions = try!(self.get_vandalism_reversions(&canonical_title));
-        for revision in &vandalism_reversions {
+        for revision in &antivandalism_revisions {
             let reverted_contents =
                 try!(self.wiki.get_revision_content(&canonical_title, revision.revid));
             let vandalized_contents =
@@ -196,7 +197,7 @@ impl WikipediaMinusWikipediansHandler {
         }
 
         info!("For \"{}\", successfully merged {} of {} possible vandalisms: {:?}", title,
-              merged_revisions.len(), vandalism_reversions.len(), merged_revisions);
+              merged_revisions.len(), antivandalism_revisions.len(), merged_revisions);
 
         let body = try!(self.wiki.parse_wikitext(&canonical_title, &accumulated_contents));
         // Note: "title" rather than "canonical_title", so that redirects look right.
