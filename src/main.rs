@@ -53,6 +53,10 @@ use std::io::Write;
 use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::mpsc::channel;
+use std::sync::mpsc::Receiver;
+use std::thread;
 
 use html5ever::Attribute;
 use html5ever::tree_builder::interface::TreeSink;
@@ -193,26 +197,55 @@ impl WikipediaMinusWikipediansHandler {
         Ok(revisions.into_iter().filter(|revision| revision.comment.contains("vandal")).collect())
     }
 
-    // TODO: this name is terrible.
-    fn get_page_with_vandalism_restored(&self, title: &str) -> Result<String, String> {
-        let canonical_title = try!(self.wiki.get_canonical_title(title));
-        info!("Canonical page title for \"{}\" is \"{}\"", title, canonical_title);
-
-        let latest_revision = try!(self.wiki.get_latest_revision(&canonical_title));
-        let antivandalism_revisions = try!(self.get_antivandalism_revisions(&canonical_title));
-
-        // Revision content, parent revision content
-        let mut antivandalism_revisions_content: Vec<(String, String)> =
-            Vec::with_capacity(antivandalism_revisions.len());
-        for revision in antivandalism_revisions {
-            antivandalism_revisions_content.push(
-                (try!(self.wiki.get_revision_content(&canonical_title, revision.revid)),
-                 try!(self.wiki.get_revision_content(&canonical_title, revision.parentid))));
+    /// Returns a vector of tuples containing the contents of each revision and its parent revision.
+    fn get_revisions_content(&self, title: String, revisions: Vec<Revision>)
+                             -> Result<Vec<(String, String)>, String> {
+        let _timer =
+            Timer::new(format!("Got content of {} revisions of \"{}\"", revisions.len(), title));
+        let mut receivers: Vec<Receiver<(Result<String, String>, Result<String, String>)>> =
+            Vec::with_capacity(revisions.len());
+        for revision in &revisions {
+            let (sender, receiver) = channel();
+            let wiki = self.wiki.clone();
+            let title = title.to_string().clone();
+            let revision = revision.clone();
+            thread::spawn(move|| {
+                // TODO: check result?
+                sender.send(
+                    (wiki.get_revision_content(&title, revision.revid),
+                     wiki.get_revision_content(&title, revision.parentid)));
+            });
+            receivers.push(receiver);
         }
 
+        // Elements: (revision content, parent revision content)
+        let mut revisions_content: Vec<(String, String)> = Vec::with_capacity(revisions.len());
+        for receiver in receivers {
+            let (clean_result, vandalized_result) =
+                try_display!(receiver.recv(), "Failed to get data from thread");
+            revisions_content.push((try!(clean_result), try!(vandalized_result)));
+        }
+        Ok(revisions_content)
+    }
+
+    fn get_page_with_vandalism_restored(&self, title: &str) -> Result<String, String> {
+        let canonical_title = Arc::new(try!(self.wiki.get_canonical_title(title)));
+        info!("Canonical page title for \"{}\" is \"{}\"", title, canonical_title);
+
+        let antivandalism_revisions = try!(self.get_antivandalism_revisions(&canonical_title));
+        let antivandalism_revisions_content =
+            try!(self.get_revisions_content((*canonical_title).clone(), antivandalism_revisions));
+
+        let latest_revision = try!(self.wiki.get_latest_revision(&canonical_title));
+        let latest_revision_content =
+            try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid));
+
+        let _merge_timer = Timer::new(format!("Merged {} revisions of \"{}\"",
+                                              (&antivandalism_revisions_content).len(), title));
         let merged_contents = antivandalism_revisions_content.into_iter().fold(
-            try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid)),
+            latest_revision_content,
             |accumulated, (clean, vandalized)| try_merge(&clean, &accumulated, &vandalized));
+        drop(_merge_timer);
 
         let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_contents));
         // Note: "title" rather than "canonical_title", so that redirects look right.
@@ -228,6 +261,7 @@ impl WikipediaMinusWikipediansHandler {
 impl Handler for WikipediaMinusWikipediansHandler {
     fn handle(&self, request: &mut Request) -> IronResult<Response> {
         if request.url.path.len() == 2 && request.url.path[0] == "wiki" {
+            let _timer = Timer::new(format!("Served request for /wiki/{}", request.url.path[1]));
             let mut response =
                 match self.get_page_with_vandalism_restored(&request.url.path[1]) {
                     Ok(page_contents) => Response::with((iron::status::Ok, page_contents)),

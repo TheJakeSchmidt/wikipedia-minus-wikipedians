@@ -1,6 +1,7 @@
 extern crate redis;
 
 use std::io::Read;
+use std::sync::Arc;
 
 use hyper::Client;
 use hyper::header::Connection;
@@ -12,10 +13,11 @@ use url::percent_encoding;
 use ::json;
 use ::json::JsonPathElement::{Key, Only};
 
+#[derive(Clone)]
 pub struct Wiki {
     pub hostname: String,
     pub port: u16,
-    client: Client,
+    client: Arc<Client>,
     redis_connection_info: Option<ConnectionInfo>,
 }
 
@@ -34,7 +36,7 @@ impl Wiki {
         Wiki {
             hostname: hostname,
             port: port,
-            client: client,
+            client: Arc::new(client),
             redis_connection_info: redis_connection_info,
         }
     }
@@ -43,6 +45,7 @@ impl Wiki {
     // and failed (redis::Connection isn't Send or Sync, and I couldn't get thread-locals to work).
     // Note: Panics if called when `self.redis_connection_info` is `None`.
     fn get_redis_connection(&self) -> redis::Connection {
+        // TODO: delete the format!();
         let _timer = ::Timer::new(format!("Connected to Redis"));
         // The redis-rs docs "heavily encourage" the use of URLs instead of the
         // ConnectionInfo struct, but redis::IntoConnectionInfo is only implemented for
