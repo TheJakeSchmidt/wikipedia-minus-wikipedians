@@ -28,6 +28,20 @@ macro_rules! try_display {
     })
 }
 
+/// Helper macro for unwrapping Result values whose E types implement std::fmt::Display, and that
+/// are being unwrapped in functions that don't return Result. For Ok(), evaluates to the contained
+/// value. For Err(), logs the formatted error at with error!(), and returns the value in the second
+/// argument.
+macro_rules! try_return {
+    ($expr:expr, $retval:expr, $($format_arg:expr),* ) => (match $expr {
+        Ok(val) => val,
+        Err(err) => {
+            error!("{}: {}", format!($($format_arg),*), err);
+            return $retval;
+        },
+    })
+}
+
 mod json;
 mod wiki;
 
@@ -86,9 +100,10 @@ impl Drop for Timer {
     }
 }
 
-/// Does a 3-way merge, merging `new1` and `new2` under the assumption that both diverged from
-/// `old`. Returns None if the strings do not merge together cleanly.
-fn merge(old: &str, new1: &str, new2: &str) -> Result<Option<String>, String> {
+/// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
+/// `old`. If the strings to not merge together cleanly, returns `new`.
+fn try_merge(old: &str, new: &str, other: &str) -> String {
+    let _timer = Timer::new("Attempted to merge revision".to_string());
     fn write_to_temp_file(contents: &str) -> Result<NamedTempFile, String> {
         let tempfile = try_display!(NamedTempFile::new(), "Error creating temp file");
         let mut file = try_display!(OpenOptions::new().write(true).open(tempfile.path()),
@@ -98,19 +113,27 @@ fn merge(old: &str, new1: &str, new2: &str) -> Result<Option<String>, String> {
         Ok(tempfile)
     }
 
-    let old_tempfile = try!(write_to_temp_file(old));
-    let new1_tempfile = try!(write_to_temp_file(new1));
-    let new2_tempfile = try!(write_to_temp_file(new2));
+    let old_tempfile = try_return!(write_to_temp_file(old), new.to_string(),
+                                   "Failed to write old to file");
+    let new_tempfile = try_return!(write_to_temp_file(new), new.to_string(),
+                                   "Failed to write new to file");
+    let other_tempfile = try_return!(write_to_temp_file(other), new.to_string(),
+                                     "Failed to write other to file");
 
     let mut process = Command::new("diff3");
-    process.arg("-m").args(&[new1_tempfile.path(), old_tempfile.path(), new2_tempfile.path()])
+    process.arg("-m").args(&[new_tempfile.path(), old_tempfile.path(), other_tempfile.path()])
         .stdout(Stdio::piped()).stderr(Stdio::null());
-    let output = try_display!(process.output(), "Error getting output from diff3 subprocess");
+    let output = try_return!(process.output(), new.to_string(),
+                             "Error getting output from diff3 subprocess");
     if output.status.success() {
-        Ok(Some(try_display!(String::from_utf8(output.stdout),
-                             "Error converting diff3 output to UTF-8")))
+        info!("Succesfully merged revision");
+        try_return!(String::from_utf8(output.stdout), new.to_string(),
+                    "Error converting diff3 output to UTF-8")
     } else {
-        Ok(None)
+        if output.status.code() != Some(1) { // Exit code 1 indicates a merge with conflicts
+            error!("diff3 failed with exit code {:?}", output.status.code());
+        }
+        new.to_string()
     }
 }
 
@@ -178,36 +201,27 @@ impl WikipediaMinusWikipediansHandler {
         let latest_revision = try!(self.wiki.get_latest_revision(&canonical_title));
         let antivandalism_revisions = try!(self.get_antivandalism_revisions(&canonical_title));
 
-        let mut accumulated_contents =
-            try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid));
-        let mut merged_revisions = vec![];
-        for revision in &antivandalism_revisions {
-            let reverted_contents =
-                try!(self.wiki.get_revision_content(&canonical_title, revision.revid));
-            let vandalized_contents =
-                try!(self.wiki.get_revision_content(&canonical_title, revision.parentid));
-            match merge(&reverted_contents, &vandalized_contents, &accumulated_contents) {
-                Ok(Some(merged_contents)) => {
-                    accumulated_contents = merged_contents;
-                    merged_revisions.push(revision.revid);
-                }
-                Ok(None) => (),
-                Err(msg) => return Err(format!("Error merging revision {} of \"{}\": {}",
-                                               revision.revid, title, msg))
-            }
+        // Revision content, parent revision content
+        let mut antivandalism_revisions_content: Vec<(String, String)> =
+            Vec::with_capacity(antivandalism_revisions.len());
+        for revision in antivandalism_revisions {
+            antivandalism_revisions_content.push(
+                (try!(self.wiki.get_revision_content(&canonical_title, revision.revid)),
+                 try!(self.wiki.get_revision_content(&canonical_title, revision.parentid))));
         }
 
-        info!("For \"{}\", successfully merged {} of {} possible vandalisms: {:?}", title,
-              merged_revisions.len(), antivandalism_revisions.len(), merged_revisions);
+        let merged_contents = antivandalism_revisions_content.into_iter().fold(
+            try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid)),
+            |accumulated, (clean, vandalized)| try_merge(&clean, &accumulated, &vandalized));
 
-        let body = try!(self.wiki.parse_wikitext(&canonical_title, &accumulated_contents));
+        let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_contents));
         // Note: "title" rather than "canonical_title", so that redirects look right.
         let current_page_contents = try!(self.wiki.get_current_page_content(&title));
         let placeholder = format!("WMW_PLACEHOLDER_TEXT_{}", rand::random::<u64>());
         let page_contents_with_placeholder =
             try!(replace_node_with_placeholder(
                 &current_page_contents, "mw-content-text", &placeholder));
-        Ok(page_contents_with_placeholder.replace(&placeholder, &body))
+        Ok(page_contents_with_placeholder.replace(&placeholder, &html_body))
     }
 }
 
@@ -326,27 +340,27 @@ mod tests {
     #[test]
     fn test_merge_clean() {
         let old = "First line.\n\nSecond line.\n";
-        let new1 = "First line.\n\nSecond line changed.\n";
-        let new2 = "First line changed.\n\nSecond line.\n";
+        let new = "First line.\n\nSecond line changed.\n";
+        let other = "First line changed.\n\nSecond line.\n";
         assert_eq!(Some("First line changed.\n\nSecond line changed.\n".to_string()),
-                   merge(old, new1, new2).unwrap());
+                   merge(old, new, other).unwrap());
     }
 
     #[test]
     fn test_merge_conflicting() {
         let old = "First line.\n\nSecond line.\n";
-        let new1 = "First line.\n\nSecond line changed one way.\n";
-        let new2 = "First line changed.\n\nSecond line changed a different way.\n";
-        assert_eq!(None, merge(old, new1, new2).unwrap());
+        let new = "First line.\n\nSecond line changed one way.\n";
+        let other = "First line changed.\n\nSecond line changed a different way.\n";
+        assert_eq!(None, merge(old, new, other).unwrap());
     }
 
     #[test]
     fn test_merge_special_characters() {
         let old = "First line.\n\nSecond line.\n";
-        let new1 = "First line.\n\nSecond line 𐅃.\n";
-        let new2 = "First line さようなら.\n\nSecond line.\n";
+        let new = "First line.\n\nSecond line 𐅃.\n";
+        let other = "First line さようなら.\n\nSecond line.\n";
         assert_eq!(Some("First line さようなら.\n\nSecond line 𐅃.\n".to_string()),
-                   merge(old, new1, new2).unwrap());
+                   merge(old, new, other).unwrap());
     }
 
     #[test]
