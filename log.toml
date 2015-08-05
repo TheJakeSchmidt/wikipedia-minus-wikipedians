@@ -2,12 +2,13 @@ refresh_rate = 60
 
 [appender.stdout]
 kind = "console"
-pattern = "%l %d{%F %T.%f} %T [%f:%L] %m"
+pattern = "%l [%f:%L] %m"
 
 [appender.file]
 kind = "file"
 path = "/tmp/wmw.log" # TODO: better path
 pattern = "%l %d{%F %T.%f} %T [%f:%L] %m"
+append = false
 
 [root]
 level = "info"
