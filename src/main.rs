@@ -369,15 +369,15 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge, replace_node_with_placeholder};
+    use super::{try_merge, replace_node_with_placeholder};
 
     #[test]
     fn test_merge_clean() {
         let old = "First line.\n\nSecond line.\n";
         let new = "First line.\n\nSecond line changed.\n";
         let other = "First line changed.\n\nSecond line.\n";
-        assert_eq!(Some("First line changed.\n\nSecond line changed.\n".to_string()),
-                   merge(old, new, other).unwrap());
+        assert_eq!("First line changed.\n\nSecond line changed.\n".to_string(),
+                   try_merge(old, new, other));
     }
 
     #[test]
@@ -385,7 +385,7 @@ mod tests {
         let old = "First line.\n\nSecond line.\n";
         let new = "First line.\n\nSecond line changed one way.\n";
         let other = "First line changed.\n\nSecond line changed a different way.\n";
-        assert_eq!(None, merge(old, new, other).unwrap());
+        assert_eq!(new, try_merge(old, new, other));
     }
 
     #[test]
@@ -393,8 +393,8 @@ mod tests {
         let old = "First line.\n\nSecond line.\n";
         let new = "First line.\n\nSecond line 𐅃.\n";
         let other = "First line さようなら.\n\nSecond line.\n";
-        assert_eq!(Some("First line さようなら.\n\nSecond line 𐅃.\n".to_string()),
-                   merge(old, new, other).unwrap());
+        assert_eq!("First line さようなら.\n\nSecond line 𐅃.\n".to_string(),
+                   try_merge(old, new, other));
     }
 
     #[test]
