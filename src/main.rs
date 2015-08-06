@@ -43,6 +43,7 @@ macro_rules! try_return {
 }
 
 mod json;
+mod longest_common_subsequence;
 mod wiki;
 
 use argparse::ArgumentParser;
