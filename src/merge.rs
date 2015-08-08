@@ -4,7 +4,6 @@ use std::iter::FromIterator;
 use ::longest_common_subsequence;
 use ::longest_common_subsequence::CommonSubsequence;
 
-// TODO: Some of these parameters might be unused. Audit and remove if possible.
 /// Represents the states of a 4-state machine representing the traversal through `old` to find
 /// stable and unstable chunks: at any given moment, the part of `old` under consideration is either
 /// unmatched in both `new` and `other`, matched in only one, or matched in both.
@@ -19,7 +18,6 @@ enum MatchState {
     BothMatch(usize, usize, usize),
 }
 
-// TODO: I bet some of these parameters are unused. Audit and remove if possible.
 /// Represents the transitions in the 4-state machine representing the traversal through `old` to
 /// find stable and unstable chunks: at any index, either `new` or `other` may either start matching
 /// `old` (if it were not already matching `old` at that index), or stop matching `old` (if if was
@@ -60,8 +58,8 @@ impl Ord for MatchStateTransition {
         match self_offset.cmp(other_offset) {
             Ordering::Less | Ordering::Greater => self_offset.cmp(other_offset),
             Ordering::Equal => {
-                // For transitions at the same index, we put stops before starts to minimize the
-                // number of empty chunks output, and put New* before Other* arbitrarily.
+                // For transitions at the same offset in old, we put stops before starts to minimize
+                // the number of empty chunks output, and put New* before Other* arbitrarily.
                 let self_type = match self {
                     &NewStopsMatching(..) => 1,
                     &OtherStopsMatching(..) => 2,
@@ -111,87 +109,17 @@ fn try_merge(old: &str, new: &str, other: &str) -> String {
 }
 
 // TODO: doc comment
-fn merge(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence) -> Vec<Chunk> {
+fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence) -> Vec<Chunk> {
     let match_state_transitions = calculate_match_state_transitions(new_lcs, other_lcs);
 
-    // TODO: I probably don't need to use a mutable vector like this. Try to rewrite with fold() if possible.
     let mut chunk_ends: Vec<ChunkEnd> = Vec::new();
     let mut match_state = NeitherMatch;
-    for match_state_transition in match_state_transitions {
-        //println!("{:?} {:?}", match_state, match_state_transition);
-        // First, calculate the end offsets of each chunk.
-        // TODO: If I just called these "previous_old_offset" &c., would that be any less understandable?
-        match (&match_state, &match_state_transition) {
-            (&OnlyNewMatches(previous_match_old_offset, previous_match_new_offset),
-             &OtherStartsMatching(current_match_old_offset, current_match_other_offset)) => {
-                let offset_in_old = current_match_old_offset;
-                let offset_in_new = previous_match_new_offset +
-                    (current_match_old_offset - previous_match_old_offset);
-                let offset_in_other = current_match_other_offset;
-                chunk_ends.push(ChunkEnd::Unstable(offset_in_old, offset_in_new, offset_in_other));
-                println!("Output chunk end {:?}",
-                         ChunkEnd::Unstable(offset_in_old, offset_in_new, offset_in_other));
-            },
-            (&OnlyOtherMatches(previous_match_old_offset, previous_match_other_offset),
-             &NewStartsMatching(current_match_old_offset, current_match_new_offset)) => {
-                let offset_in_old = current_match_old_offset;
-                let offset_in_new = current_match_new_offset;
-                let offset_in_other = previous_match_other_offset +
-                    (current_match_old_offset - previous_match_old_offset);
-                chunk_ends.push(ChunkEnd::Unstable(offset_in_old, offset_in_new, offset_in_other));
-                println!("Output chunk end {:?}",
-                         ChunkEnd::Unstable(offset_in_old, offset_in_new, offset_in_other));
-            },
-            (&BothMatch(previous_match_old_offset, _, previous_match_other_offset),
-             &NewStopsMatching(current_match_old_offset, current_match_new_offset)) => {
-                let length = current_match_old_offset - previous_match_old_offset;
-                chunk_ends.push(ChunkEnd::Stable(current_match_old_offset, current_match_new_offset,
-                                                 previous_match_other_offset + length));
-                println!("Output chunk end {:?}",
-                         ChunkEnd::Stable(current_match_old_offset, current_match_new_offset,
-                                          previous_match_other_offset + length));
-            }
-            (&BothMatch(previous_match_old_offset, previous_match_new_offset, _),
-             &OtherStopsMatching(current_match_old_offset, current_match_other_offset)) => {
-                let length = current_match_old_offset - previous_match_old_offset;
-                chunk_ends.push(
-                    ChunkEnd::Stable(current_match_old_offset, previous_match_new_offset + length,
-                                     current_match_other_offset));
-                println!("Output chunk end {:?}",
-                         ChunkEnd::Stable(current_match_old_offset, previous_match_new_offset + length,
-                                     current_match_other_offset));
-            }
-            _ => (),
+    for transition in match_state_transitions {
+        match calculate_chunk_end(&match_state, &transition) {
+            Some(chunk_end) => chunk_ends.push(chunk_end),
+            None => (),
         }
-
-        // Then, move to the next state in the state machine.
-        match_state = match (match_state, match_state_transition) {
-            (NeitherMatch,     NewStartsMatching(old, new))   => OnlyNewMatches(old, new),
-            (NeitherMatch,     OtherStartsMatching(old, new)) => OnlyOtherMatches(old, new),
-
-            (OnlyNewMatches(previous_match_old_offset, previous_match_new_offset),
-             OtherStartsMatching(current_match_old_offset, current_match_other_offset)) => {
-                let length = current_match_old_offset - previous_match_old_offset;
-                BothMatch(current_match_old_offset, previous_match_new_offset + length,
-                          current_match_other_offset)
-            },
-            (OnlyNewMatches(_, _), NewStopsMatching(_, _)) => NeitherMatch,
-
-            (OnlyOtherMatches(previous_match_old_offset, previous_match_other_offset), 
-             NewStartsMatching(current_match_old_offset, current_match_new_offset))   => {
-                let length = current_match_old_offset - previous_match_old_offset;
-                BothMatch(current_match_old_offset, current_match_new_offset,
-                          previous_match_other_offset + length)
-            },
-            (OnlyOtherMatches(_, _), OtherStopsMatching(_, _))  => NeitherMatch,
-
-            (BothMatch(old, new, other), NewStopsMatching(_, _)) => OnlyOtherMatches(old, other),
-            (BothMatch(old, new, other), OtherStopsMatching(_, _))  => OnlyNewMatches(old, new),
-
-            (state, transition) => {
-                unreachable!("Illegal transition {:?} from state {:?}", transition, state);
-            },
-        };
+        match_state = calculate_next_state(&match_state, &transition);
     }
 
     let mut chunks: Vec<Chunk> = Vec::with_capacity(chunk_ends.len());
@@ -201,26 +129,26 @@ fn merge(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence) -> Vec<Chunk>
     for chunk_end in chunk_ends {
         match chunk_end {
             ChunkEnd::Stable(old, new, other) => {
-                chunks.push(Chunk::Stable(old_offset, old - old_offset));
-                old_offset = old;
-                new_offset = new;
-                other_offset = other;
+                if old != old_offset {
+                    chunks.push(Chunk::Stable(old_offset, old - old_offset));
+                    old_offset = old;
+                    new_offset = new;
+                    other_offset = other;
+                }
             },
             ChunkEnd::Unstable(old, new, other) => {
-                chunks.push(Chunk::Unstable((old_offset, old - old_offset),
-                                            (new_offset, new - new_offset),
-                                            (other_offset, other - other_offset)));
-                old_offset = old;
-                new_offset = new;
-                other_offset = other;
+                if old != old_offset || new != new_offset || other != other_offset {
+                    chunks.push(Chunk::Unstable((old_offset, old - old_offset),
+                                                (new_offset, new - new_offset),
+                                                (other_offset, other - other_offset)));
+                    old_offset = old;
+                    new_offset = new;
+                    other_offset = other;
+                }
             },
         }
     }
-    chunks.into_iter().filter(|chunk| match chunk {
-        &Chunk::Stable(_, length) => length != 0,
-        &Chunk::Unstable((_, old_length), (_, new_length), (_, other_length)) =>
-            old_length != 0 || new_length != 0 || other_length != 0,
-    }).collect()
+    chunks
 }
 
 /// From the LCS's for `old`/`new` and `old`/`other`, constructs a vector representing the state transitions
@@ -242,9 +170,72 @@ fn calculate_match_state_transitions(new_lcs: CommonSubsequence, other_lcs: Comm
     match_state_transitions
 }
 
+// TODO: doc comment
+fn calculate_chunk_end(match_state: &MatchState, transition: &MatchStateTransition) -> Option<ChunkEnd> {
+    match (match_state, transition) {
+        (&OnlyNewMatches(previous_old_offset, previous_new_offset),
+         &OtherStartsMatching(current_old_offset, current_other_offset)) => {
+            Some(ChunkEnd::Unstable(
+                current_old_offset,
+                previous_new_offset + (current_old_offset - previous_old_offset),
+                current_other_offset))
+        },
+        (&OnlyOtherMatches(previous_old_offset, previous_other_offset),
+         &NewStartsMatching(current_old_offset, current_new_offset)) => {
+            Some(ChunkEnd::Unstable(
+                current_old_offset, current_new_offset,
+                previous_other_offset + (current_old_offset - previous_old_offset)))
+        },
+        (&BothMatch(previous_old_offset, _, previous_other_offset),
+         &NewStopsMatching(current_old_offset, current_new_offset)) => {
+            let length = current_old_offset - previous_old_offset;
+            Some(ChunkEnd::Stable(
+                current_old_offset, current_new_offset, previous_other_offset + length))
+        }
+        (&BothMatch(previous_old_offset, previous_new_offset, _),
+         &OtherStopsMatching(current_old_offset, current_other_offset)) => {
+            let length = current_old_offset - previous_old_offset;
+            Some(ChunkEnd::Stable(
+                current_old_offset, previous_new_offset + length, current_other_offset))
+        }
+        _ => None,
+    }
+}
+
+// TODO: doc comment
+fn calculate_next_state(match_state: &MatchState, transition: &MatchStateTransition) -> MatchState {
+    match (match_state, transition) {
+        (&NeitherMatch, &NewStartsMatching(old, new))   => OnlyNewMatches(old, new),
+        (&NeitherMatch, &OtherStartsMatching(old, new)) => OnlyOtherMatches(old, new),
+
+        (&OnlyNewMatches(previous_old_offset, previous_new_offset),
+         &OtherStartsMatching(current_old_offset, current_other_offset)) => {
+            let length = current_old_offset - previous_old_offset;
+            BothMatch(current_old_offset, previous_new_offset + length,
+                      current_other_offset)
+        },
+        (&OnlyNewMatches(_, _), &NewStopsMatching(_, _)) => NeitherMatch,
+
+        (&OnlyOtherMatches(previous_old_offset, previous_other_offset), 
+         &NewStartsMatching(current_old_offset, current_new_offset))   => {
+            let length = current_old_offset - previous_old_offset;
+            BothMatch(current_old_offset, current_new_offset,
+                      previous_other_offset + length)
+        },
+        (&OnlyOtherMatches(_, _), &OtherStopsMatching(_, _))  => NeitherMatch,
+
+        (&BothMatch(old, new, other), &NewStopsMatching(_, _)) => OnlyOtherMatches(old, other),
+        (&BothMatch(old, new, other), &OtherStopsMatching(_, _))  => OnlyNewMatches(old, new),
+
+        (state, transition) => {
+            unreachable!("Illegal transition {:?} from state {:?}", transition, state);
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Chunk, calculate_match_state_transitions, merge};
+    use super::{Chunk, calculate_match_state_transitions, parse};
     use super::MatchStateTransition::*;
     use longest_common_subsequence::{CommonSubsequence, CommonSubstring};
 
@@ -363,7 +354,6 @@ mod tests {
                             Chunk::Stable(1, 1),
                             Chunk::Unstable((2, 3), (4, 1), (2, 3)),
                             Chunk::Stable(5, 1)];
-
-        assert_eq!(expected, merge(new_lcs, other_lcs));
+        assert_eq!(expected, parse(new_lcs, other_lcs));
     }
 }
