@@ -43,23 +43,24 @@ use std::ops::Index;
 use std::ops::IndexMut;
 use std::str::CharIndices;
 
+// TODO: constructor for these?
 #[derive(PartialEq, Clone, Debug)]
 pub struct CommonSubstring {
     /// The byte offset into str1 of the beginning of the common substring.
-    str1_offset: usize,
+    pub str1_offset: usize,
     /// The byte offset into str2 of the beginning of the common substring.
-    str2_offset: usize,
+    pub str2_offset: usize,
     /// The length of the common substring in bytes.
-    size_bytes: usize,
+    pub size_bytes: usize,
 }
 
 #[derive(PartialEq, Clone, Debug)]
 pub struct CommonSubsequence {
-    common_substrings: Vec<CommonSubstring>,
+    pub common_substrings: Vec<CommonSubstring>,
     /// The total length of the common subsequence in bytes.
-    size_bytes: usize,
+    pub size_bytes: usize,
     /// The total length of the common subsequence in characters.
-    size_chars: usize,
+    pub size_chars: usize,
 }
 
 /// A Task represents a step of the algorithm that needs to be done. A Task records a possible
