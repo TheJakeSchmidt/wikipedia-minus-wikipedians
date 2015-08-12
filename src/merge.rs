@@ -294,18 +294,18 @@ mod tests {
 
     #[test]
     fn test_try_merge_clean() {
-        let old = "First line.\n\nSecond line.\n";
-        let new = "First line.\n\nSecond line changed.\n";
-        let other = "First line changed.\n\nSecond line.\n";
-        assert_eq!("First line changed.\n\nSecond line changed.\n".to_string(),
+        let old = "First sentence. Second sentence.";
+        let new = "First sentence. Second sentence changed.";
+        let other = "First sentence changed. Second sentence.";
+        assert_eq!("First sentence changed. Second sentence changed.".to_string(),
                    try_merge(old, new, other));
     }
 
     #[test]
     fn test_try_merge_conflicting() {
-        let old = "First line.\n\nSecond line.\n";
-        let new = "First line.\n\nSecond line changed one way.\n";
-        let other = "First line changed.\n\nSecond line changed a different way.\n";
+        let old = "First sentence. Second sentence.";
+        let new = "First sentence. Second sentence changed one way.";
+        let other = "First sentence changed. Second sentence changed a different way.";
         assert_eq!(new, try_merge(old, new, other));
     }
 
@@ -319,10 +319,10 @@ mod tests {
 
     #[test]
     fn test_try_merge_special_characters() {
-        let old = "First line.\n\nSecond line.\n";
-        let new = "First line.\n\nSecond line 𐅃.\n";
-        let other = "First line さようなら.\n\nSecond line.\n";
-        assert_eq!("First line さようなら.\n\nSecond line 𐅃.\n".to_string(),
+        let old = "First sentence. Second sentence.";
+        let new = "First sentence. Second sentence 𐅃.";
+        let other = "First sentence さようなら. Second sentence.";
+        assert_eq!("First sentence さようなら. Second sentence 𐅃.".to_string(),
                    try_merge(old, new, other));
     }
 
