@@ -288,6 +288,11 @@ mod tests {
     use longest_common_subsequence::{CommonSubsequence, CommonSubstring};
 
     #[test]
+    fn test_try_merge_empty() {
+        assert_eq!("".to_string(), try_merge("", "", ""));
+    }
+
+    #[test]
     fn test_try_merge_clean() {
         let old = "First line.\n\nSecond line.\n";
         let new = "First line.\n\nSecond line changed.\n";
