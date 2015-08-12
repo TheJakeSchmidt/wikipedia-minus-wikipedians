@@ -104,37 +104,45 @@ enum Chunk {
 fn try_merge(old: &str, new: &str, other: &str) -> String {
     let new_lcs = longest_common_subsequence::get_longest_common_subsequence(old, new);
     let other_lcs = longest_common_subsequence::get_longest_common_subsequence(old, other);
-    let mut chunks = parse(new_lcs, other_lcs);
-    let merged_bytes = Vec::<&[u8]>::new();
-    for chunk in chunks {
-        let chunk_output = match chunk {
+    let mut byte_slices = Vec::<&[u8]>::new();
+    for chunk in parse(new_lcs, other_lcs) {
+        match chunk {
             Chunk::Stable(start, length) => {
-                merged_bytes.push(&old.as_bytes()[start..(start+length)]);
+                println!("Stable chunk: {:?}", &old.as_bytes()[start..(start+length)]);
+                byte_slices.push(&old.as_bytes()[start..(start+length)]);
             },
             Chunk::Unstable((old_start, old_length), (new_start, new_length),
                             (other_start, other_length)) => {
-                let old_chunk = old.as_bytes()[old_start..(old_start+old_length)];
-                let new_chunk = new.as_bytes()[new_start..(new_start+new_length)];
-                let other_chunk = other.as_bytes()[other_start..(other_start+other_length)];
+                let old_chunk = &old.as_bytes()[old_start..(old_start+old_length)];
+                let new_chunk = &new.as_bytes()[new_start..(new_start+new_length)];
+                let other_chunk = &other.as_bytes()[other_start..(other_start+other_length)];
                 if old_chunk == new_chunk && old_chunk != other_chunk {
                     // Changed only in other
-                    chunks.push(other_chunk);
+                    println!("Changed only in other: {:?}", other_chunk);
+                    byte_slices.push(other_chunk);
                 } else if old_chunk != new_chunk && old_chunk == other_chunk {
                     // Changed only in new
-                    chunks.push(new_chunk);
+                    println!("Changed only in new: {:?}", new_chunk);
+                    byte_slices.push(new_chunk);
                 } else if old_chunk != new_chunk && new_chunk == other_chunk {
                     // Falsely conflicting, i.e. changed identically in both new and other
-                    chunks.push(new_chunk);
+                    println!("Falsely conflicting: {:?}", new_chunk);
+                    byte_slices.push(new_chunk);
                 } else if (old_chunk != new_chunk && old_chunk != other_chunk &&
                            new_chunk != other_chunk) {
                     // Truly conflicting 
-                    return new;
+                    println!("Truly conflicting.");
+                    return new.to_owned();
                 }
             },
-        };
+        }
     }
 
-    "asdf".to_string()
+    let mut bytes: Vec<u8> = Vec::new();
+    for byte_slice in byte_slices {
+        bytes.extend(byte_slice);
+    }
+    String::from_utf8(bytes).unwrap()
 }
 
 // TODO: doc comment
@@ -264,9 +272,35 @@ fn calculate_next_state(match_state: &MatchState, transition: &MatchStateTransit
 
 #[cfg(test)]
 mod tests {
-    use super::{Chunk, calculate_match_state_transitions, parse};
+    use super::{Chunk, calculate_match_state_transitions, parse, try_merge};
     use super::MatchStateTransition::*;
     use longest_common_subsequence::{CommonSubsequence, CommonSubstring};
+
+    #[test]
+    fn test_merge_clean() {
+        let old = "First line.\n\nSecond line.\n";
+        let new = "First line.\n\nSecond line changed.\n";
+        let other = "First line changed.\n\nSecond line.\n";
+        assert_eq!("First line changed.\n\nSecond line changed.\n".to_string(),
+                   try_merge(old, new, other));
+    }
+
+    #[test]
+    fn test_merge_conflicting() {
+        let old = "First line.\n\nSecond line.\n";
+        let new = "First line.\n\nSecond line changed one way.\n";
+        let other = "First line changed.\n\nSecond line changed a different way.\n";
+        assert_eq!(new, try_merge(old, new, other));
+    }
+
+    #[test]
+    fn test_merge_special_characters() {
+        let old = "First line.\n\nSecond line.\n";
+        let new = "First line.\n\nSecond line 𐅃.\n";
+        let other = "First line さようなら.\n\nSecond line.\n";
+        assert_eq!("First line さようなら.\n\nSecond line 𐅃.\n".to_string(),
+                   try_merge(old, new, other));
+    }
 
     #[test]
     fn test_calculate_match_state_transitions() {

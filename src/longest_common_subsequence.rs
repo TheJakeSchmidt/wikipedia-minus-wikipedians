@@ -249,10 +249,10 @@ pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequen
                 Some(size) if size >= &new_common_subsequence.size_bytes => (),
                 _ => {
                     let mut new_str1_chars = task.str1_chars.clone();
-                    new_str1_chars.next();
+                    let next_char = new_str1_chars.next().unwrap().1;
                     work_queue.push(
                         Task {
-                            str1_offset: new_str1_offset + 1,
+                            str1_offset: new_str1_offset + next_char.len_utf8(),
                             str2_offset: new_str2_offset,
                             common_subsequence: new_common_subsequence.clone(),
                             str1_chars: new_str1_chars,
@@ -277,11 +277,11 @@ pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequen
                 Some(size) if size >= &new_common_subsequence.size_bytes => (),
                 _ => {
                     let mut new_str2_chars = task.str2_chars.clone();
-                    new_str2_chars.next();
+                    let next_char = new_str2_chars.next().unwrap().1;
                     work_queue.push(
                         Task {
                             str1_offset: new_str1_offset,
-                            str2_offset: new_str2_offset + 1,
+                            str2_offset: new_str2_offset + next_char.len_utf8(),
                             common_subsequence: new_common_subsequence.clone(),
                             str1_chars: task.str1_chars.clone(),
                             str2_chars: new_str2_chars,
@@ -382,6 +382,34 @@ mod tests {
                 common_substrings: vec![],
                 size_bytes: 0,
                 size_chars: 0,
+            };
+        assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
+    }
+
+    #[test]
+    fn test_special_characters() {
+        let test_string = "Test さよstring𐅃.";
+        let test_string2 = "Test さようならstring.";
+        let expected =
+            CommonSubsequence {
+                common_substrings: vec![
+                    CommonSubstring {
+                        str1_offset: 0,
+                        str2_offset: 0,
+                        size_bytes: 11,
+                    },
+                    CommonSubstring {
+                        str1_offset: 11,
+                        str2_offset: 20,
+                        size_bytes: 6,
+                    },
+                    CommonSubstring {
+                        str1_offset: 21,
+                        str2_offset: 26,
+                        size_bytes: 1,
+                    }],
+                size_bytes: 18,
+                size_chars: 14,
             };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
