@@ -93,11 +93,10 @@ enum ChunkEnd {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Chunk {
-    // TODO: change this to (start, end), instead of (start, length). Lengths are basically never useful.
-    // Parameters: The offset into old, and length of the chunk.
+    // Parameters: The start (inclusive) and end (exclusive) offsets of the chunk in old.
     Stable(usize, usize),
-    // Parameters: The (offset into string, length) of the chunk for old, new, and other
-    // respectively.
+    // Parameters: The (start offset, end offset) of the chunk in old, new, and other
+    // respectively. Start offset is inclusive, end offset is exclusive.
     Unstable((usize, usize), (usize, usize), (usize, usize)),
 }
 
@@ -107,14 +106,14 @@ fn try_merge(old: &str, new: &str, other: &str) -> String {
     let mut byte_slices = Vec::<&[u8]>::new();
     for chunk in parse(new_lcs, other_lcs, old.len(), new.len(), other.len()) {
         match chunk {
-            Chunk::Stable(start, length) => {
-                byte_slices.push(&old.as_bytes()[start..(start+length)]);
+            Chunk::Stable(start, end) => {
+                byte_slices.push(&old.as_bytes()[start..end]);
             },
-            Chunk::Unstable((old_start, old_length), (new_start, new_length),
-                            (other_start, other_length)) => {
-                let old_chunk = &old.as_bytes()[old_start..(old_start+old_length)];
-                let new_chunk = &new.as_bytes()[new_start..(new_start+new_length)];
-                let other_chunk = &other.as_bytes()[other_start..(other_start+other_length)];
+            Chunk::Unstable((old_start, old_end), (new_start, new_end),
+                            (other_start, other_end)) => {
+                let old_chunk = &old.as_bytes()[old_start..old_end];
+                let new_chunk = &new.as_bytes()[new_start..new_end];
+                let other_chunk = &other.as_bytes()[other_start..other_end];
                 if old_chunk == new_chunk && old_chunk != other_chunk {
                     // Changed only in other
                     byte_slices.push(other_chunk);
@@ -164,7 +163,7 @@ fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence, old_len: usiz
         match chunk_end {
             ChunkEnd::Stable(old, new, other) => {
                 if old != old_offset {
-                    chunks.push(Chunk::Stable(old_offset, old - old_offset));
+                    chunks.push(Chunk::Stable(old_offset, old));
                     old_offset = old;
                     new_offset = new;
                     other_offset = other;
@@ -172,9 +171,8 @@ fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence, old_len: usiz
             },
             ChunkEnd::Unstable(old, new, other) => {
                 if old != old_offset || new != new_offset || other != other_offset {
-                    chunks.push(Chunk::Unstable((old_offset, old - old_offset),
-                                                (new_offset, new - new_offset),
-                                                (other_offset, other - other_offset)));
+                    chunks.push(Chunk::Unstable(
+                        (old_offset, old), (new_offset, new), (other_offset, other)));
                     old_offset = old;
                     new_offset = new;
                     other_offset = other;
@@ -418,11 +416,11 @@ mod tests {
             size_chars: 5,
         };
         let expected = vec![Chunk::Stable(0, 1),
-                            Chunk::Unstable((1, 0), (1, 2), (1, 0)),
-                            Chunk::Stable(1, 1),
-                            Chunk::Unstable((2, 3), (4, 1), (2, 3)),
-                            Chunk::Stable(5, 1),
-                            Chunk::Unstable((6, 0), (6, 0), (6, 1))];
+                            Chunk::Unstable((1, 1), (1, 3), (1, 1)),
+                            Chunk::Stable(1, 2),
+                            Chunk::Unstable((2, 5), (4, 5), (2, 5)),
+                            Chunk::Stable(5, 6),
+                            Chunk::Unstable((6, 6), (6, 6), (6, 7))];
         assert_eq!(expected, parse(new_lcs, other_lcs, 6, 6, 7));
     }
 }
