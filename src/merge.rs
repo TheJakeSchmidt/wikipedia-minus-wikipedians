@@ -335,15 +335,13 @@ mod tests {
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
                 CommonSubstring { str1_offset: 1, str2_offset: 3, size_bytes: 2 },
                 CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 4, size_words: 4, // size_words is nonsense.
-        };
+            size_bytes: 4 };
         let other_lcs = CommonSubsequence {
             common_substrings: vec![
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
                 CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
                 CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 5, size_words: 5, // size_words is nonsense.
-        };
+            size_bytes: 5 };
         let expected = vec![
             NewStartsMatching(0, 0),
             OtherStartsMatching(0, 0),
@@ -374,13 +372,13 @@ mod tests {
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
                 CommonSubstring { str1_offset: 1, str2_offset: 3, size_bytes: 2 },
                 CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 4, size_words: 4 }; // size_words is nonsense.
+            size_bytes: 4 };
         let other_lcs = CommonSubsequence {
             common_substrings: vec![
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
                 CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
                 CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 5, size_words: 5 }; // size_words is nonsense.
+            size_bytes: 5 };
         let expected = vec![Chunk::Stable(0, 1),
                             Chunk::Unstable((1, 1), (1, 3), (1, 1)),
                             Chunk::Stable(1, 2),
