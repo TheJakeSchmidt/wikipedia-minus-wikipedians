@@ -1,3 +1,9 @@
+//! Implements a 3-way merge, using the algorithm described in:
+//!
+//! Sanjeev Khanna , Keshav Kunal , Benjamin C. Pierce, A formal investigation of Diff3 Proceedings
+//! of the 27th international conference on Foundations of software technology and theoretical
+//! computer science, December 12-14, 2007, New Delhi, India.
+
 use std::cmp::Ordering;
 use std::iter::FromIterator;
 
@@ -84,25 +90,30 @@ impl PartialOrd for MatchStateTransition {
     }
 }
 
-/// Reprpesents the  TODO: finish comment. Or, just use tuples (usize, usize, usize, bool) for this.
+/// Reprpesents the end of a chunk.
 #[derive(Debug)]
 enum ChunkEnd {
+    /// Parameters: The end offset (exclusive) of the end of the chunk in old, new, and other.
     Stable(usize, usize, usize),
+    /// Parameters: The end offset (exclusive) of the end of the chunk in old, new, and other.
     Unstable(usize, usize, usize),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum Chunk {
-    // Parameters: The start (inclusive) and end (exclusive) offsets of the chunk in old.
+    /// Parameters: The start (inclusive) and end (exclusive) offsets of the chunk in old.
     Stable(usize, usize),
-    // Parameters: The (start offset, end offset) of the chunk in old, new, and other
-    // respectively. Start offset is inclusive, end offset is exclusive.
+    /// Parameters: The (start offset, end offset) of the chunk in old, new, and other
+    /// respectively. Start offset is inclusive, end offset is exclusive.
     Unstable((usize, usize), (usize, usize), (usize, usize)),
 }
 
-fn try_merge(old: &str, new: &str, other: &str) -> String {
+/// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
+/// `old`. If the strings do not merge together cleanly, returns `new`.
+pub fn try_merge(old: &str, new: &str, other: &str) -> String {
     let new_lcs = longest_common_subsequence::get_longest_common_subsequence(old, new);
     let other_lcs = longest_common_subsequence::get_longest_common_subsequence(old, other);
+
     let mut byte_slices = Vec::<&[u8]>::new();
     for chunk in parse(new_lcs, other_lcs, old.len(), new.len(), other.len()) {
         match chunk {
@@ -139,7 +150,10 @@ fn try_merge(old: &str, new: &str, other: &str) -> String {
     String::from_utf8(bytes).unwrap()
 }
 
-// TODO: doc comment
+/// Calculates a "diff3 parse" as described in Khanna, Kunal, and Pierce 2007, given the longest
+/// common subsequences between `old` and `new` and between `old` and `other`. This is an
+/// implementation of the algorithm given in Figure 2 of that paper, using the state machine
+/// described in `MatchState`, `MatchStateTransition`, and `calculate_next_state`.
 fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence, old_len: usize,
          new_len: usize, other_len: usize) -> Vec<Chunk> {
     let match_state_transitions = calculate_match_state_transitions(new_lcs, other_lcs);
@@ -183,8 +197,8 @@ fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence, old_len: usiz
     chunks
 }
 
-/// From the LCS's for `old`/`new` and `old`/`other`, constructs a vector representing the state transitions
-/// over the course of the string.
+/// From the LCS's for `old`/`new` and `old`/`other`, constructs a vector representing the state
+/// transitions over the course of the string.
 fn calculate_match_state_transitions(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence) ->
     Vec<MatchStateTransition> {
     let mut match_state_transitions = Vec::from_iter(
@@ -202,7 +216,8 @@ fn calculate_match_state_transitions(new_lcs: CommonSubsequence, other_lcs: Comm
     match_state_transitions
 }
 
-// TODO: doc comment
+/// Given a match state and the transition out of it, calculates the ChunkEnd of the chunk output
+/// upon that transition (if any).
 fn calculate_chunk_end(match_state: &MatchState, transition: &MatchStateTransition) -> Option<ChunkEnd> {
     match (match_state, transition) {
         (&OnlyNewMatches(previous_old_offset, previous_new_offset),
@@ -234,7 +249,8 @@ fn calculate_chunk_end(match_state: &MatchState, transition: &MatchStateTransiti
     }
 }
 
-// TODO: doc comment
+/// Given a match state and the transition out of it, calculates the next state in the state
+/// machine.
 fn calculate_next_state(match_state: &MatchState, transition: &MatchStateTransition) -> MatchState {
     match (match_state, transition) {
         (&NeitherMatch, &NewStartsMatching(old, new))   => OnlyNewMatches(old, new),
@@ -307,8 +323,7 @@ mod tests {
 
     #[test]
     fn test_calculate_match_state_transitions() {
-        // This is from figure 1 of diff3-short.pdf.
-        // TODO: comment better.
+        // This test case uses the strings from figure 1 of Khanna, Kunal, and Pierce 2007.
         let new_lcs = CommonSubsequence {
             common_substrings: vec![
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
@@ -344,11 +359,10 @@ mod tests {
         assert_eq!(expected, calculate_match_state_transitions(new_lcs, other_lcs));
     }
 
-    // TODO: Make sure this test covers all branches, transitions, states, etc.
     #[test]
     fn test_whatever() {
-        // This is from figure 1 of diff3-short.pdf, but with an unstable chunk at the end.
-        // TODO: comment better.
+        // This uses the strings from figure 1 of Khanna, Kunal, and Pierce 2007, but with an
+        // extra unstable chunk at the end.
         let new_lcs = CommonSubsequence {
             common_substrings: vec![
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
