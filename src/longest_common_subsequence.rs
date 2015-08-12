@@ -311,14 +311,8 @@ mod tests {
         let expected =
             CommonSubsequence {
                 common_substrings: vec![
-                    CommonSubstring {
-                        str1_offset: 0,
-                        str2_offset: 0,
-                        size_bytes: 22,
-                    }],
-                size_bytes: 22,
-                size_chars: 22,
-            };
+                    CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 22 }],
+                size_bytes: 22, size_chars: 22 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string));
     }
 
@@ -329,19 +323,9 @@ mod tests {
         let expected =
             CommonSubsequence {
                 common_substrings: vec![
-                    CommonSubstring {
-                        str1_offset: 0,
-                        str2_offset: 0,
-                        size_bytes: 5,
-                    },
-                    CommonSubstring {
-                        str1_offset: 5,
-                        str2_offset: 20,
-                        size_bytes: 6,
-                    }],
-                size_bytes: 11,
-                size_chars: 11,
-            };
+                    CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 5 },
+                    CommonSubstring { str1_offset: 5, str2_offset: 20,size_bytes: 6 }],
+                size_bytes: 11, size_chars: 11 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
 
@@ -352,24 +336,10 @@ mod tests {
         let expected = 
             CommonSubsequence {
                 common_substrings: vec![
-                    CommonSubstring {
-                        str1_offset: 0,
-                        str2_offset: 0,
-                        size_bytes: 2,
-                    },
-                    CommonSubstring {
-                        str1_offset: 3,
-                        str2_offset: 2,
-                        size_bytes: 2,
-                    },
-                    CommonSubstring {
-                        str1_offset: 5,
-                        str2_offset: 5,
-                        size_bytes: 1,
-                    }],
-                size_bytes: 5,
-                size_chars: 5,
-            };
+                    CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
+                    CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
+                    CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
+                size_bytes: 5, size_chars: 5 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
 
@@ -378,11 +348,7 @@ mod tests {
         let test_string = "abcdefg";
         let test_string2 = "12345678";
         let expected =
-            CommonSubsequence {
-                common_substrings: vec![],
-                size_bytes: 0,
-                size_chars: 0,
-            };
+            CommonSubsequence { common_substrings: vec![], size_bytes: 0, size_chars: 0 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
 
@@ -393,24 +359,10 @@ mod tests {
         let expected =
             CommonSubsequence {
                 common_substrings: vec![
-                    CommonSubstring {
-                        str1_offset: 0,
-                        str2_offset: 0,
-                        size_bytes: 11,
-                    },
-                    CommonSubstring {
-                        str1_offset: 11,
-                        str2_offset: 20,
-                        size_bytes: 6,
-                    },
-                    CommonSubstring {
-                        str1_offset: 21,
-                        str2_offset: 26,
-                        size_bytes: 1,
-                    }],
-                size_bytes: 18,
-                size_chars: 14,
-            };
+                    CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 11 },
+                    CommonSubstring { str1_offset: 11, str2_offset: 20, size_bytes: 6 },
+                    CommonSubstring { str1_offset: 21, str2_offset: 26, size_bytes: 1 }],
+                size_bytes: 18, size_chars: 14 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
 

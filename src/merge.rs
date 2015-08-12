@@ -272,7 +272,7 @@ mod tests {
     use longest_common_subsequence::{CommonSubsequence, CommonSubstring};
 
     #[test]
-    fn test_merge_clean() {
+    fn test_try_merge_clean() {
         let old = "First line.\n\nSecond line.\n";
         let new = "First line.\n\nSecond line changed.\n";
         let other = "First line changed.\n\nSecond line.\n";
@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_conflicting() {
+    fn test_try_merge_conflicting() {
         let old = "First line.\n\nSecond line.\n";
         let new = "First line.\n\nSecond line changed one way.\n";
         let other = "First line changed.\n\nSecond line changed a different way.\n";
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_with_change_at_end() {
+    fn test_try_merge_with_change_at_end() {
         let old = "Test string.";
         let new = "Test 1 string.";
         let other = "Test string. 2";
@@ -297,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_special_characters() {
+    fn test_try_merge_special_characters() {
         let old = "First line.\n\nSecond line.\n";
         let new = "First line.\n\nSecond line 𐅃.\n";
         let other = "First line さようなら.\n\nSecond line.\n";
@@ -311,43 +311,17 @@ mod tests {
         // TODO: comment better.
         let new_lcs = CommonSubsequence {
             common_substrings: vec![
-                CommonSubstring {
-                    str1_offset: 0,
-                    str2_offset: 0,
-                    size_bytes: 1,
-                },
-                CommonSubstring {
-                    str1_offset: 1,
-                    str2_offset: 3,
-                    size_bytes: 2,
-                },
-                CommonSubstring {
-                    str1_offset: 5,
-                    str2_offset: 5,
-                    size_bytes: 1,
-                }],
-            size_bytes: 4,
-            size_chars: 4,
+                CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
+                CommonSubstring { str1_offset: 1, str2_offset: 3, size_bytes: 2 },
+                CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
+            size_bytes: 4, size_chars: 4,
         };
         let other_lcs = CommonSubsequence {
             common_substrings: vec![
-                CommonSubstring {
-                    str1_offset: 0,
-                    str2_offset: 0,
-                    size_bytes: 2,
-                },
-                CommonSubstring {
-                    str1_offset: 3,
-                    str2_offset: 2,
-                    size_bytes: 2,
-                },
-                CommonSubstring {
-                    str1_offset: 5,
-                    str2_offset: 5,
-                    size_bytes: 1,
-                }],
-            size_bytes: 5,
-            size_chars: 5,
+                CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
+                CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
+                CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
+            size_bytes: 5, size_chars: 5,
         };
         let expected = vec![
             NewStartsMatching(0, 0),
@@ -377,44 +351,16 @@ mod tests {
         // TODO: comment better.
         let new_lcs = CommonSubsequence {
             common_substrings: vec![
-                CommonSubstring {
-                    str1_offset: 0,
-                    str2_offset: 0,
-                    size_bytes: 1,
-                },
-                CommonSubstring {
-                    str1_offset: 1,
-                    str2_offset: 3,
-                    size_bytes: 2,
-                },
-                CommonSubstring {
-                    str1_offset: 5,
-                    str2_offset: 5,
-                    size_bytes: 1,
-                }],
-            size_bytes: 4,
-            size_chars: 4,
-        };
+                CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
+                CommonSubstring { str1_offset: 1, str2_offset: 3, size_bytes: 2 },
+                CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
+            size_bytes: 4, size_chars: 4 };
         let other_lcs = CommonSubsequence {
             common_substrings: vec![
-                CommonSubstring {
-                    str1_offset: 0,
-                    str2_offset: 0,
-                    size_bytes: 2,
-                },
-                CommonSubstring {
-                    str1_offset: 3,
-                    str2_offset: 2,
-                    size_bytes: 2,
-                },
-                CommonSubstring {
-                    str1_offset: 5,
-                    str2_offset: 5,
-                    size_bytes: 1,
-                }],
-            size_bytes: 5,
-            size_chars: 5,
-        };
+                CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
+                CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
+                CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
+            size_bytes: 5, size_chars: 5 };
         let expected = vec![Chunk::Stable(0, 1),
                             Chunk::Unstable((1, 1), (1, 3), (1, 1)),
                             Chunk::Stable(1, 2),
