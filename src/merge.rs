@@ -93,6 +93,7 @@ enum ChunkEnd {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Chunk {
+    // TODO: change this to (start, end), instead of (start, length). Lengths are basically never useful.
     // Parameters: The offset into old, and length of the chunk.
     Stable(usize, usize),
     // Parameters: The (offset into string, length) of the chunk for old, new, and other
@@ -101,10 +102,38 @@ enum Chunk {
 }
 
 fn try_merge(old: &str, new: &str, other: &str) -> String {
-    let new_substrings = longest_common_subsequence::get_longest_common_subsequence(old, new)
-        .common_substrings.into_iter();
-    let other_substrings = longest_common_subsequence::get_longest_common_subsequence(old, other)
-        .common_substrings.into_iter();
+    let new_lcs = longest_common_subsequence::get_longest_common_subsequence(old, new);
+    let other_lcs = longest_common_subsequence::get_longest_common_subsequence(old, other);
+    let mut chunks = parse(new_lcs, other_lcs);
+    let merged_bytes = Vec::<&[u8]>::new();
+    for chunk in chunks {
+        let chunk_output = match chunk {
+            Chunk::Stable(start, length) => {
+                merged_bytes.push(&old.as_bytes()[start..(start+length)]);
+            },
+            Chunk::Unstable((old_start, old_length), (new_start, new_length),
+                            (other_start, other_length)) => {
+                let old_chunk = old.as_bytes()[old_start..(old_start+old_length)];
+                let new_chunk = new.as_bytes()[new_start..(new_start+new_length)];
+                let other_chunk = other.as_bytes()[other_start..(other_start+other_length)];
+                if old_chunk == new_chunk && old_chunk != other_chunk {
+                    // Changed only in other
+                    chunks.push(other_chunk);
+                } else if old_chunk != new_chunk && old_chunk == other_chunk {
+                    // Changed only in new
+                    chunks.push(new_chunk);
+                } else if old_chunk != new_chunk && new_chunk == other_chunk {
+                    // Falsely conflicting, i.e. changed identically in both new and other
+                    chunks.push(new_chunk);
+                } else if (old_chunk != new_chunk && old_chunk != other_chunk &&
+                           new_chunk != other_chunk) {
+                    // Truly conflicting 
+                    return new;
+                }
+            },
+        };
+    }
+
     "asdf".to_string()
 }
 
