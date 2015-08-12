@@ -250,13 +250,11 @@ pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequen
 
         // 1. Move forward in both strings for as long as they match.
         let mut matching_bytes = 0;
-        let mut matching_words = 0;
         let mut finished = false;
         loop {
             match (task.str1_words.clone().next(), task.str2_words.clone().next()) {
                 (Some((_, str1_word)), Some((_, str2_word))) if str1_word == str2_word => {
                     matching_bytes += str1_word.len();
-                    matching_words += 1;
                     // We can only advance either iterator when we advance both iterators, so we
                     // clone them in the match condition and then advance them here. If we were to
                     // advance them both in the match condition above, when we reached the end of
