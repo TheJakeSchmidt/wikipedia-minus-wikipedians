@@ -105,7 +105,7 @@ fn try_merge(old: &str, new: &str, other: &str) -> String {
     let new_lcs = longest_common_subsequence::get_longest_common_subsequence(old, new);
     let other_lcs = longest_common_subsequence::get_longest_common_subsequence(old, other);
     let mut byte_slices = Vec::<&[u8]>::new();
-    for chunk in parse(new_lcs, other_lcs) {
+    for chunk in parse(new_lcs, other_lcs, old.len(), new.len(), other.len()) {
         match chunk {
             Chunk::Stable(start, length) => {
                 byte_slices.push(&old.as_bytes()[start..(start+length)]);
@@ -141,7 +141,8 @@ fn try_merge(old: &str, new: &str, other: &str) -> String {
 }
 
 // TODO: doc comment
-fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence) -> Vec<Chunk> {
+fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence, old_len: usize,
+         new_len: usize, other_len: usize) -> Vec<Chunk> {
     let match_state_transitions = calculate_match_state_transitions(new_lcs, other_lcs);
 
     let mut chunk_ends: Vec<ChunkEnd> = Vec::new();
@@ -153,6 +154,7 @@ fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence) -> Vec<Chunk>
         }
         match_state = calculate_next_state(&match_state, &transition);
     }
+    chunk_ends.push(ChunkEnd::Unstable(old_len, new_len, other_len));
 
     let mut chunks: Vec<Chunk> = Vec::with_capacity(chunk_ends.len());
     let mut old_offset = 0;
@@ -289,6 +291,14 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_with_change_at_end() {
+        let old = "Test string.";
+        let new = "Test 1 string.";
+        let other = "Test string. 2";
+        assert_eq!("Test 1 string. 2".to_string(), try_merge(old, new, other));
+    }
+
+    #[test]
     fn test_merge_special_characters() {
         let old = "First line.\n\nSecond line.\n";
         let new = "First line.\n\nSecond line 𐅃.\n";
@@ -365,7 +375,7 @@ mod tests {
     // TODO: Make sure this test covers all branches, transitions, states, etc.
     #[test]
     fn test_whatever() {
-        // This is from figure 1 of diff3-short.pdf.
+        // This is from figure 1 of diff3-short.pdf, but with an unstable chunk at the end.
         // TODO: comment better.
         let new_lcs = CommonSubsequence {
             common_substrings: vec![
@@ -411,7 +421,8 @@ mod tests {
                             Chunk::Unstable((1, 0), (1, 2), (1, 0)),
                             Chunk::Stable(1, 1),
                             Chunk::Unstable((2, 3), (4, 1), (2, 3)),
-                            Chunk::Stable(5, 1)];
-        assert_eq!(expected, parse(new_lcs, other_lcs));
+                            Chunk::Stable(5, 1),
+                            Chunk::Unstable((6, 0), (6, 0), (6, 1))];
+        assert_eq!(expected, parse(new_lcs, other_lcs, 6, 6, 7));
     }
 }
