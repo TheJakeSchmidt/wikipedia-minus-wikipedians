@@ -111,6 +111,7 @@ enum Chunk {
 /// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
 /// `old`. If the strings do not merge together cleanly, returns `new`.
 pub fn try_merge(old: &str, new: &str, other: &str) -> String {
+    let _timer = ::Timer::new("Attempted to merge revision".to_owned());
     let new_lcs = longest_common_subsequence::get_longest_common_subsequence(old, new);
     let other_lcs = longest_common_subsequence::get_longest_common_subsequence(old, other);
 
@@ -311,8 +312,8 @@ mod tests {
 
     #[test]
     fn test_try_merge_with_change_at_end() {
-        let old = "Test string.";
-        let new = "Test 1 string.";
+        let old = "Test string. ";
+        let new = "Test 1 string. ";
         let other = "Test string. 2";
         assert_eq!("Test 1 string. 2".to_string(), try_merge(old, new, other));
     }
@@ -334,14 +335,14 @@ mod tests {
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
                 CommonSubstring { str1_offset: 1, str2_offset: 3, size_bytes: 2 },
                 CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 4, size_chars: 4,
+            size_bytes: 4, size_words: 4, // size_words is nonsense.
         };
         let other_lcs = CommonSubsequence {
             common_substrings: vec![
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
                 CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
                 CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 5, size_chars: 5,
+            size_bytes: 5, size_words: 5, // size_words is nonsense.
         };
         let expected = vec![
             NewStartsMatching(0, 0),
@@ -373,13 +374,13 @@ mod tests {
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
                 CommonSubstring { str1_offset: 1, str2_offset: 3, size_bytes: 2 },
                 CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 4, size_chars: 4 };
+            size_bytes: 4, size_words: 4 }; // size_words is nonsense.
         let other_lcs = CommonSubsequence {
             common_substrings: vec![
                 CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
                 CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
                 CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 5, size_chars: 5 };
+            size_bytes: 5, size_words: 5 }; // size_words is nonsense.
         let expected = vec![Chunk::Stable(0, 1),
                             Chunk::Unstable((1, 1), (1, 3), (1, 1)),
                             Chunk::Stable(1, 2),

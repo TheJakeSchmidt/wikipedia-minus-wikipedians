@@ -59,23 +59,23 @@ pub struct CommonSubsequence {
     pub common_substrings: Vec<CommonSubstring>,
     /// The total length of the common subsequence in bytes.
     pub size_bytes: usize,
-    /// The total length of the common subsequence in characters.
-    pub size_chars: usize,
+    /// The total length of the common subsequence in words.
+    pub size_words: usize,
 }
 
 /// A Task represents a step of the algorithm that needs to be done. A Task records a possible
 /// longest common subsequence up to a particular offset in each string. Executing a Task means
 /// moving as far forward in both strings as possible (for as long as they match, starting at the
-/// Task's offsets), then enqueuing Tasks to try moving one character farther in each string.
+/// Task's offsets), then enqueuing Tasks to try moving one word farther in each string.
 struct Task<'a> {
     /// The highest offset in str1 which has been searched
     str1_offset: usize,
     /// The highest offset in str2 which has been searched
     str2_offset: usize,
     /// The iterator representing the current position in str1
-    str1_chars: CharIndices<'a>,
+    str1_words: Words<'a>,
     /// The iterator representing the current position in str2
-    str2_chars: CharIndices<'a>,
+    str2_words: Words<'a>,
     /// The common subsequence which is known so far.
     common_subsequence: CommonSubsequence,
 }
@@ -84,8 +84,8 @@ impl<'a> PartialEq for Task<'a> {
     fn eq(&self, other: &Task) -> bool {
         self.str1_offset == other.str1_offset && 
             self.str2_offset == other.str2_offset && 
-            self.str1_chars.clone().next() == other.str1_chars.clone().next() && 
-            self.str2_chars.clone().next() == other.str2_chars.clone().next() && 
+            self.str1_words.clone().next() == other.str1_words.clone().next() &&
+            self.str2_words.clone().next() == other.str2_words.clone().next() &&
             self.common_subsequence == other.common_subsequence
     }
 }
@@ -117,9 +117,9 @@ impl<'a> Ord for Task<'a> {
         // in Miller and Myers 1975: this heuristic is admissible because (-str1_offset +
         // -str2_offset) is the negative Manhattan distance to the goal, plus a constant (the
         // Manhattan distance from the start node to the goal node).
-        let self_value = self.common_subsequence.size_chars as i64 * 2
+        let self_value = self.common_subsequence.size_bytes as i64 * 2
             - self.str1_offset as i64 - self.str2_offset as i64;
-        let other_value = other.common_subsequence.size_chars as i64 * 2
+        let other_value = other.common_subsequence.size_bytes as i64 * 2
             - other.str1_offset as i64 - other.str2_offset as i64;
         if self_value > other_value {
             return Ordering::Greater;
@@ -173,6 +173,62 @@ impl<'a> Ord for Task<'a> {
     }
 }
 
+#[derive(Clone)]
+struct Words<'a> {
+    underlying_string: &'a str,
+    char_indices: CharIndices<'a>,
+    current_index: usize,
+}
+
+impl<'a> Words<'a> {
+    fn new(underlying_string: &'a str) -> Words<'a> {
+        Words {
+            underlying_string: underlying_string,
+            char_indices: underlying_string.char_indices(),
+            current_index: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for Words<'a> {
+    type Item = (usize, &'a [u8]);
+
+    // TODO: these iterators have .clone().next() called a bunch of times. Might be better to
+    // pre-calculate the next result.
+
+    fn next(&mut self) -> Option<(usize, &'a [u8])> {
+        let start = self.current_index;
+        // Find the next space
+        let mut looped = false;
+        loop {
+            match self.char_indices.next() {
+                Some((_, ch)) if ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t' => { break; },
+                Some((_, ch)) => { looped = true; },
+                None => {
+                    if looped {
+                        // TODO: Does this make a copy, and then take a reference to the copy? That
+                        // wouldn't be ideal.
+                        return Some((start, &self.underlying_string.as_bytes()[start..]));
+                    } else {
+                        return None;
+                    }
+                },
+            }
+        }
+        // Then, find the beginning of the next word
+        loop {
+            match self.char_indices.clone().next() {
+                Some((i, ch)) if !(ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t') => {
+                    self.current_index = i;
+                    return Some((start, &self.underlying_string.as_bytes()[start..i]));
+                },
+                Some((_, ch)) => { self.char_indices.next(); },
+                None => { return Some((start, &self.underlying_string.as_bytes()[start..])); },
+            }
+        }
+    }
+}
+
 pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequence {
     let mut work_queue: BinaryHeap<Task> = BinaryHeap::new();
     let first_task =
@@ -180,9 +236,9 @@ pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequen
             str1_offset: 0,
             str2_offset: 0,
             common_subsequence:
-                CommonSubsequence { common_substrings: vec![], size_bytes: 0, size_chars: 0 },
-            str1_chars: str1.char_indices(),
-            str2_chars: str2.char_indices(),
+                CommonSubsequence { common_substrings: vec![], size_bytes: 0, size_words: 0 },
+            str1_words: Words::new(str1),
+            str2_words: Words::new(str2),
         };
     work_queue.push(first_task);
 
@@ -196,20 +252,20 @@ pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequen
 
         // 1. Move forward in both strings for as long as they match.
         let mut matching_bytes = 0;
-        let mut matching_chars = 0;
+        let mut matching_words = 0;
         let mut finished = false;
         loop {
-            match (task.str1_chars.clone().next(), task.str2_chars.clone().next()) {
-                (Some((index, str1_char)), Some((_, str2_char))) if str1_char == str2_char => {
-                    matching_bytes += str1_char.len_utf8();
-                    matching_chars += 1;
+            match (task.str1_words.clone().next(), task.str2_words.clone().next()) {
+                (Some((_, str1_word)), Some((_, str2_word))) if str1_word == str2_word => {
+                    matching_bytes += str1_word.len();
+                    matching_words += 1;
                     // We can only advance either iterator when we advance both iterators, so we
                     // clone them in the match condition and then advance them here. If we were to
                     // advance them both in the match condition above, when we reached the end of
                     // one string but not the other, we'd advance twice before cloning the iterator
                     // for the new task, and miss an offset.
-                    task.str1_chars.next();
-                    task.str2_chars.next();
+                    task.str1_words.next();
+                    task.str2_words.next();
                 },
                 (None, None) => {
                     // We've reached the end of both strings, and have our answer.
@@ -233,30 +289,33 @@ pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequen
                     size_bytes: matching_bytes,
                 });
             new_common_subsequence.size_bytes += matching_bytes;
-            new_common_subsequence.size_chars += matching_chars;
+            new_common_subsequence.size_words += matching_words;
         }
 
         if finished {
+            println!("Last task priority: {}",
+                     task.common_subsequence.size_bytes as i64 * 2
+                     - task.str1_offset as i64 - task.str2_offset as i64);
             return new_common_subsequence;
         }
 
-        // 3a. Enqueue another task in the work queue that starts one character farther into str1
-        // and at the same offset into str2.
+        // 3a. Enqueue another task in the work queue that starts one word farther into str1 and at
+        // the same offset into str2.
         let new_str1_offset = task.str1_offset + matching_bytes;
         let new_str2_offset = task.str2_offset + matching_bytes;
         if new_str1_offset < str1.len() {
             match longest_known_common_subsequences.get(&(new_str1_offset + 1, new_str2_offset)) {
                 Some(size) if size >= &new_common_subsequence.size_bytes => (),
                 _ => {
-                    let mut new_str1_chars = task.str1_chars.clone();
-                    let next_char = new_str1_chars.next().unwrap().1;
+                    let mut new_str1_words = task.str1_words.clone();
+                    let next_word = new_str1_words.next().unwrap().1;
                     work_queue.push(
                         Task {
-                            str1_offset: new_str1_offset + next_char.len_utf8(),
+                            str1_offset: new_str1_offset + next_word.len(),
                             str2_offset: new_str2_offset,
                             common_subsequence: new_common_subsequence.clone(),
-                            str1_chars: new_str1_chars,
-                            str2_chars: task.str2_chars.clone(),
+                            str1_words: new_str1_words,
+                            str2_words: task.str2_words.clone(),
                         });
                 }
             }
@@ -271,20 +330,20 @@ pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequen
         }
 
         // 3b. Enqueue another task in the work queue that starts at the same offset into str1 and
-        // one character farther into str2.
+        // one word farther into str2.
         if new_str2_offset < str2.len() {
             match longest_known_common_subsequences.get(&(new_str1_offset, new_str2_offset + 1)) {
                 Some(size) if size >= &new_common_subsequence.size_bytes => (),
                 _ => {
-                    let mut new_str2_chars = task.str2_chars.clone();
-                    let next_char = new_str2_chars.next().unwrap().1;
+                    let mut new_str2_words = task.str2_words.clone();
+                    let next_word = new_str2_words.next().unwrap().1;
                     work_queue.push(
                         Task {
                             str1_offset: new_str1_offset,
-                            str2_offset: new_str2_offset + next_char.len_utf8(),
+                            str2_offset: new_str2_offset + next_word.len(),
                             common_subsequence: new_common_subsequence.clone(),
-                            str1_chars: task.str1_chars.clone(),
-                            str2_chars: new_str2_chars,
+                            str1_words: task.str1_words.clone(),
+                            str2_words: new_str2_words,
                         });
                 },
             }
@@ -303,21 +362,64 @@ pub fn get_longest_common_subsequence(str1: &str, str2: &str) -> CommonSubsequen
 
 #[cfg(test)]
 mod tests {
-    use super::{get_longest_common_subsequence, CommonSubsequence, CommonSubstring};
+    use super::{get_longest_common_subsequence, CommonSubsequence, CommonSubstring, Words};
 
     #[test]
-    fn test_identical_strings() {
+    fn test_words_with_no_spaces_at_beginning_or_end() {
+        let mut words = Words::new("0 1 2 3");
+        assert_eq!(Some((0, "0 ".as_bytes())), words.next());
+        assert_eq!(Some((2, "1 ".as_bytes())), words.next());
+        assert_eq!(Some((4, "2 ".as_bytes())), words.next());
+        assert_eq!(Some((6, "3".as_bytes())), words.next());
+        assert_eq!(None, words.next());
+    }
+
+    #[test]
+    fn test_words_with_spaces_at_beginning_and_end() {
+        let mut words = Words::new(" 0 1 2 3 ");
+        assert_eq!(Some((0, " ".as_bytes())), words.next());
+        assert_eq!(Some((1, "0 ".as_bytes())), words.next());
+        assert_eq!(Some((3, "1 ".as_bytes())), words.next());
+        assert_eq!(Some((5, "2 ".as_bytes())), words.next());
+        assert_eq!(Some((7, "3 ".as_bytes())), words.next());
+        assert_eq!(None, words.next());
+    }
+
+    #[test]
+    fn test_words_with_multiple_spaces() {
+        let mut words = Words::new("  0  1\r\n\t2  3  ");
+        assert_eq!(Some((0, "  ".as_bytes())), words.next());
+        assert_eq!(Some((2, "0  ".as_bytes())), words.next());
+        assert_eq!(Some((5, "1\r\n\t".as_bytes())), words.next());
+        assert_eq!(Some((9, "2  ".as_bytes())), words.next());
+        assert_eq!(Some((12, "3  ".as_bytes())), words.next());
+        assert_eq!(None, words.next());
+    }
+
+    #[test]
+    fn test_words_with_multibyte_characters() {
+        let mut words = Words::new("  0  1\r\n\tさようなら  3  ");
+        assert_eq!(Some((0, "  ".as_bytes())), words.next());
+        assert_eq!(Some((2, "0  ".as_bytes())), words.next());
+        assert_eq!(Some((5, "1\r\n\t".as_bytes())), words.next());
+        assert_eq!(Some((9, "さようなら  ".as_bytes())), words.next());
+        assert_eq!(Some((26, "3  ".as_bytes())), words.next());
+        assert_eq!(None, words.next());
+    }
+
+    #[test]
+    fn test_lcs_identical_strings() {
         let test_string = "test identical strings";
         let expected =
             CommonSubsequence {
                 common_substrings: vec![
                     CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 22 }],
-                size_bytes: 22, size_chars: 22 };
+                size_bytes: 22, size_words: 3 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string));
     }
 
     #[test]
-    fn test_small_diff() {
+    fn test_lcs_diff_in_middle() {
         let test_string = "test string";
         let test_string2 = "test diff in middle string";
         let expected =
@@ -325,44 +427,43 @@ mod tests {
                 common_substrings: vec![
                     CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 5 },
                     CommonSubstring { str1_offset: 5, str2_offset: 20,size_bytes: 6 }],
-                size_bytes: 11, size_chars: 11 };
+                size_bytes: 11, size_words: 2 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
 
     #[test]
-    fn test_complicated_diff() {
-        let test_string = "123456";
-        let test_string2 = "124536";
+    fn test_lcs_complicated_diff() {
+        let test_string = "1 2 3 4 5 6";
+        let test_string2 = "1 2 4 5 3 6";
         let expected = 
             CommonSubsequence {
                 common_substrings: vec![
-                    CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
-                    CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
-                    CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-                size_bytes: 5, size_chars: 5 };
+                    CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 4 },
+                    CommonSubstring { str1_offset: 6, str2_offset: 4, size_bytes: 4 },
+                    CommonSubstring { str1_offset: 10, str2_offset: 10, size_bytes: 1 }],
+                size_bytes: 9, size_words: 5 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
 
     #[test]
-    fn test_no_characters_in_common() {
-        let test_string = "abcdefg";
-        let test_string2 = "12345678";
+    fn test_lcs_no_words_in_common() {
+        let test_string = "a b c d e f g";
+        let test_string2 = "1 2 3 4 5 6 7 8";
         let expected =
-            CommonSubsequence { common_substrings: vec![], size_bytes: 0, size_chars: 0 };
+            CommonSubsequence { common_substrings: vec![], size_bytes: 0, size_words: 0 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
 
     #[test]
-    fn test_special_characters() {
-        let test_string = "Test さよstring𐅃.";
-        let test_string2 = "Test さようならstring.";
+    fn test_lcs_special_characters() {
+        let test_string = "Test さよ string 𐅃.";
+        let test_string2 = "Test さよ うなら string .";
         let expected =
             CommonSubsequence {
                 common_substrings: vec![
-                    CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 11 },
-                    CommonSubstring { str1_offset: 11, str2_offset: 20, size_bytes: 6 },
-                    CommonSubstring { str1_offset: 21, str2_offset: 26, size_bytes: 1 }],
-                size_bytes: 18, size_chars: 14 };
+                    CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 12 },
+                    CommonSubstring { str1_offset: 12, str2_offset: 22, size_bytes: 7 }],
+                size_bytes: 19, size_words: 3 };
         assert_eq!(expected, get_longest_common_subsequence(&test_string, &test_string2));
     }
 
