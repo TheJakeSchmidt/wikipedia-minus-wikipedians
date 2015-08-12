@@ -108,7 +108,6 @@ fn try_merge(old: &str, new: &str, other: &str) -> String {
     for chunk in parse(new_lcs, other_lcs) {
         match chunk {
             Chunk::Stable(start, length) => {
-                println!("Stable chunk: {:?}", &old.as_bytes()[start..(start+length)]);
                 byte_slices.push(&old.as_bytes()[start..(start+length)]);
             },
             Chunk::Unstable((old_start, old_length), (new_start, new_length),
@@ -118,20 +117,16 @@ fn try_merge(old: &str, new: &str, other: &str) -> String {
                 let other_chunk = &other.as_bytes()[other_start..(other_start+other_length)];
                 if old_chunk == new_chunk && old_chunk != other_chunk {
                     // Changed only in other
-                    println!("Changed only in other: {:?}", other_chunk);
                     byte_slices.push(other_chunk);
                 } else if old_chunk != new_chunk && old_chunk == other_chunk {
                     // Changed only in new
-                    println!("Changed only in new: {:?}", new_chunk);
                     byte_slices.push(new_chunk);
                 } else if old_chunk != new_chunk && new_chunk == other_chunk {
                     // Falsely conflicting, i.e. changed identically in both new and other
-                    println!("Falsely conflicting: {:?}", new_chunk);
                     byte_slices.push(new_chunk);
                 } else if (old_chunk != new_chunk && old_chunk != other_chunk &&
                            new_chunk != other_chunk) {
                     // Truly conflicting 
-                    println!("Truly conflicting.");
                     return new.to_owned();
                 }
             },
