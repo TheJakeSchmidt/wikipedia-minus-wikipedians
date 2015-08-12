@@ -119,7 +119,7 @@ impl<'a> Ord for Task<'a> {
         // Manhattan distance from the start node to the goal node).
         let self_value = self.common_subsequence.size_chars as i64 * 2
             - self.str1_offset as i64 - self.str2_offset as i64;
-        let other_value = self.common_subsequence.size_chars as i64 * 2
+        let other_value = other.common_subsequence.size_chars as i64 * 2
             - other.str1_offset as i64 - other.str2_offset as i64;
         if self_value > other_value {
             return Ordering::Greater;
