@@ -311,7 +311,6 @@ pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> CommonSubsequ
 #[cfg(test)]
 mod tests {
     use super::{get_longest_common_subsequence, CommonSubsequence, CommonRegion};
-    use merge::Words;
 
     #[test]
     fn test_lcs_identical_strings() {
@@ -319,11 +318,10 @@ mod tests {
         let expected =
             CommonSubsequence {
                 common_regions: vec![
-                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 3 }],
-                size: 3 };
+                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 22 }],
+                size: 22 };
         assert_eq!(expected,
-                   get_longest_common_subsequence(
-                       Words::new(&test_string), Words::new(&test_string)));
+                   get_longest_common_subsequence(test_string.chars(), test_string.chars()));
     }
 
     #[test]
@@ -333,18 +331,17 @@ mod tests {
         let expected =
             CommonSubsequence {
                 common_regions: vec![
-                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 1 },
-                    CommonRegion { iter1_offset: 1, iter2_offset: 4, size: 1 }],
-                size: 2 };
+                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 5 },
+                    CommonRegion { iter1_offset: 5, iter2_offset: 20, size: 6 }],
+                size: 11 };
         assert_eq!(expected,
-                   get_longest_common_subsequence(
-                       Words::new(&test_string), Words::new(&test_string2)));
+                   get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 
     #[test]
     fn test_lcs_complicated_diff() {
-        let test_string = "1 2 3 4 5 6";
-        let test_string2 = "1 2 4 5 3 6";
+        let test_string = "123456";
+        let test_string2 = "124536";
         let expected =
             CommonSubsequence {
                 common_regions: vec![
@@ -353,34 +350,32 @@ mod tests {
                     CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
                 size: 5 };
         assert_eq!(expected,
-                   get_longest_common_subsequence(
-                       Words::new(&test_string), Words::new(&test_string2)));
+                   get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 
     #[test]
     fn test_lcs_no_words_in_common() {
-        let test_string = "a b c d e f g";
-        let test_string2 = "1 2 3 4 5 6 7 8";
+        let test_string = "abcdefg";
+        let test_string2 = "12345678";
         let expected =
             CommonSubsequence { common_regions: vec![], size: 0 };
         assert_eq!(expected,
-                   get_longest_common_subsequence(
-                       Words::new(&test_string), Words::new(&test_string2)));
+                   get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 
     #[test]
     fn test_lcs_special_characters() {
-        let test_string = "Test さよ string 𐅃.";
-        let test_string2 = "Test さよ うなら string .";
+        let test_string = "Test さよstring𐅃.";
+        let test_string2 = "Test さようなら string.";
         let expected =
             CommonSubsequence {
                 common_regions: vec![
-                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 2 },
-                    CommonRegion { iter1_offset: 2, iter2_offset: 3, size: 1 }],
-                size: 3 };
+                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 7 },
+                    CommonRegion { iter1_offset: 7, iter2_offset: 11, size: 6 },
+                    CommonRegion { iter1_offset: 14, iter2_offset: 17, size: 1 }],
+                size: 14 };
         assert_eq!(expected,
-                   get_longest_common_subsequence(
-                       Words::new(&test_string), Words::new(&test_string2)));
+                   get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 
     //use hyper::Client;

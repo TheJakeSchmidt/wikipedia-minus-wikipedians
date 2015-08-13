@@ -110,16 +110,14 @@ enum Chunk {
 }
 
 #[derive(Clone)]
-// TODO: remove the "pub", and have the tests in longest_common_subsequence.rs use some other Iterator type.
-pub struct Words<'a> {
+struct Words<'a> {
     underlying_string: &'a str,
     char_indices: CharIndices<'a>,
     current_index: usize,
 }
 
 impl<'a> Words<'a> {
-    // TODO: remove the "pub", and have the tests in longest_common_subsequence.rs use some other Iterator type.
-    pub fn new(underlying_string: &'a str) -> Words<'a> {
+    fn new(underlying_string: &'a str) -> Words<'a> {
         Words {
             underlying_string: underlying_string,
             char_indices: underlying_string.char_indices(),
