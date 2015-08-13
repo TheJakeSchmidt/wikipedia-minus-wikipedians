@@ -191,3 +191,92 @@ impl Wiki {
         }
     }
 }
+
+/// Parses out the sections of a Wikipedia page. Returns a vector of (section name, section
+/// content). Section name is "" for the content before the first heading. Section content
+/// includes the heading.
+pub fn parse_sections(wikitext: &str) -> Vec<(String, String)> {
+    // TODO: Should this match sections with empty headings (e.g. "\n== ==\n")? I assume not.
+    // TODO: This is written assuming that MediaWiki strips spaces from the secion
+    // titles. Confirm that.
+    let re = regex!(r"(?m)^==([^=]|[^=][^\n]*?[^=])==$");
+    let section_heading_captures = re.captures_iter(wikitext);
+    let section_contents = re.split(wikitext);
+
+    // Tuples: (complete heading, extracted section title)
+    let section_headings = vec![("", "")].into_iter().chain(
+        section_heading_captures.map(
+            |capture| (capture.at(0).unwrap(), capture.at(1).unwrap().trim())));
+
+    section_headings.zip(section_contents).map(
+        |((section_heading, section_title), section_contents)|
+        (section_title.to_owned(), section_heading.to_owned() + section_contents)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_sections;
+
+    #[test]
+    fn test_parse_sections() {
+        let sections = parse_sections("asdf\n\n==test section==\ntest contents");
+        assert_eq!(vec![("".to_owned(), "asdf\n\n".to_owned()),
+                        ("test section".to_owned(), "==test section==\ntest contents".to_owned())],
+                   sections);
+    }
+
+    #[test]
+    fn test_parse_sections_empty_intro() {
+        let sections = parse_sections("==test section==\ntest contents");
+        assert_eq!(vec![("".to_owned(), "".to_owned()),
+                        ("test section".to_owned(), "==test section==\ntest contents".to_owned())],
+                   sections);
+    }
+
+    #[test]
+    fn test_parse_sections_empty_section() {
+        let sections = parse_sections(
+            "asdf\n\n==test section 1==\n==test section 2==\ntest contents");
+        assert_eq!(
+            vec![("".to_owned(), "asdf\n\n".to_owned()),
+                 ("test section 1".to_owned(), "==test section 1==\n".to_owned()),
+                 ("test section 2".to_owned(), "==test section 2==\ntest contents".to_owned())],
+            sections);
+    }
+
+    #[test]
+    fn test_parse_sections_spaces_around_title() {
+        let sections = parse_sections("==  test section ==\ntest contents");
+        assert_eq!(
+            vec![("".to_owned(), "".to_owned()),
+                 ("test section".to_owned(), "==  test section ==\ntest contents".to_owned())],
+            sections);
+    }
+
+    #[test]
+    fn test_parse_sections_newline_in_middle() {
+        let sections = parse_sections("asdf\n\n==test\nsection==\ntest contents");
+        assert_eq!(vec![("".to_owned(), "asdf\n\n==test\nsection==\ntest contents".to_owned())],
+                   sections);
+    }
+
+    #[test]
+    fn test_parse_sections_single_character_title() {
+        let sections = parse_sections("asdf\n\n==r==\ntest contents");
+        assert_eq!(vec![("".to_owned(), "asdf\n\n".to_owned()),
+                        ("r".to_owned(), "==r==\ntest contents".to_owned())],
+                   sections);
+    }
+
+    #[test]
+    fn test_parse_sections_ignores_subsections() {
+        let sections = parse_sections(
+            "asdf\n\n==test section==\ntest contents\n===subsection===\nqwer");
+        assert_eq!(
+            vec![
+                ("".to_owned(), "asdf\n\n".to_owned()),
+                ("test section".to_owned(),
+                 "==test section==\ntest contents\n===subsection===\nqwer".to_owned())],
+            sections);
+    }
+}

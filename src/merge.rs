@@ -168,7 +168,6 @@ impl<'a> Iterator for Words<'a> {
 /// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
 /// `old`. If the strings do not merge together cleanly, returns `new`.
 pub fn try_merge(old: &str, new: &str, other: &str) -> String {
-    let _timer = ::Timer::new("Attempted to merge revision".to_owned());
     let mut old_words = Words::new(old);
     let mut new_words = Words::new(new);
     let mut other_words = Words::new(other);
@@ -223,7 +222,6 @@ pub fn try_merge(old: &str, new: &str, other: &str) -> String {
             },
         }
     }
-    info!("Successfully merged revision");
     String::from_utf8(bytes).unwrap()
 }
 

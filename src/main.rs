@@ -49,6 +49,7 @@ mod wiki;
 
 use argparse::ArgumentParser;
 use argparse::Store;
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
@@ -106,41 +107,55 @@ impl Drop for Timer {
     }
 }
 
+// TODO: document. And, ideally, make this function less dumb.
+// TODO: return (&str, &str)
+fn create_sections_map<I>(arg: I) -> HashMap<String, String>
+    where I: IntoIterator<Item=(String, String)> {
+    let mut map = HashMap::new();
+    for (section_title, section_contents) in arg.into_iter() {
+        map.insert(section_title, section_contents);
+    }
+    map
+}
+
 /// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
 /// `old`. If the strings to not merge together cleanly, returns `new`.
+// TODO: Since this function isn't treating this like a non-semantic 3-way merge, rename old, new,
+// and other to more wiki-centric names.
 fn try_merge(old: &str, new: &str, other: &str) -> String {
     let _timer = Timer::new("Attempted to merge revision".to_string());
-    fn write_to_temp_file(contents: &str) -> Result<NamedTempFile, String> {
-        let tempfile = try_display!(NamedTempFile::new(), "Error creating temp file");
-        let mut file = try_display!(OpenOptions::new().write(true).open(tempfile.path()),
-                                    "Error opening temp file for writing");
-        try_display!(file.write_all(contents.as_bytes()), "Error writing to temp file");
-        try_display!(file.flush(), "Error flushing temp file");
-        Ok(tempfile)
+
+    let old_sections: Vec<(String, String)> = wiki::parse_sections(old);
+    let new_sections: Vec<(String, String)> = wiki::parse_sections(new);
+    let other_sections: Vec<(String, String)> = wiki::parse_sections(other);
+
+    let new_sections_map = create_sections_map(new_sections);
+    let other_sections_map = create_sections_map(other_sections);
+
+    let mut receivers = Vec::new();
+    for (section_title, section_content) in old_sections {
+        let (sender, receiver) = channel();
+        let new_sections_map = new_sections_map.clone();
+        let other_sections_map = other_sections_map.clone();
+        thread::spawn(move|| {
+            let start_time = time::precise_time_ns();
+            sender.send(
+                match (new_sections_map.get(&section_title),
+                       other_sections_map.get(&section_title)) {
+                    (Some(new_content), Some(other_content)) => {
+                        let merged = merge::try_merge(&section_content, &new_content, &other_content);
+                        info!("Merge section {}: {} ms", section_title,
+                              (time::precise_time_ns() - start_time) / 1_000_000);
+                        merged
+                    }
+                    _ => section_content
+                });
+        });
+        receivers.push(receiver);
     }
 
-    let old_tempfile = try_return!(write_to_temp_file(old), new.to_string(),
-                                   "Failed to write old to file");
-    let new_tempfile = try_return!(write_to_temp_file(new), new.to_string(),
-                                   "Failed to write new to file");
-    let other_tempfile = try_return!(write_to_temp_file(other), new.to_string(),
-                                     "Failed to write other to file");
-
-    let mut process = Command::new("diff3");
-    process.arg("-m").args(&[new_tempfile.path(), old_tempfile.path(), other_tempfile.path()])
-        .stdout(Stdio::piped()).stderr(Stdio::null());
-    let output = try_return!(process.output(), new.to_string(),
-                             "Error getting output from diff3 subprocess");
-    if output.status.success() {
-        info!("Succesfully merged revision");
-        try_return!(String::from_utf8(output.stdout), new.to_string(),
-                    "Error converting diff3 output to UTF-8")
-    } else {
-        if output.status.code() != Some(1) { // Exit code 1 indicates a merge with conflicts
-            error!("diff3 failed with exit code {:?}", output.status.code());
-        }
-        new.to_string()
-    }
+    // TODO: will unwrap() this ever panic? What can cause recv() to return Err?
+    receivers.into_iter().map(|receiver| receiver.recv().unwrap()).collect::<Vec<_>>().join("")
 }
 
 fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder: &str)
@@ -246,7 +261,7 @@ impl WikipediaMinusWikipediansHandler {
                                               (&antivandalism_revisions_content).len(), title));
         let merged_contents = antivandalism_revisions_content.into_iter().fold(
             latest_revision_content,
-            |accumulated, (clean, vandalized)| merge::try_merge(&clean, &accumulated, &vandalized));
+            |accumulated, (clean, vandalized)| try_merge(&clean, &accumulated, &vandalized));
         drop(_merge_timer);
 
         let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_contents));
