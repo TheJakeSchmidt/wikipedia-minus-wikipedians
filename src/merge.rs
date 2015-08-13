@@ -113,7 +113,6 @@ enum Chunk {
 // TODO: remove the "pub", and have the tests in longest_common_subsequence.rs use some other Iterator type.
 pub struct Words<'a> {
     underlying_string: &'a str,
-    // TODO: make this a Chars
     char_indices: CharIndices<'a>,
     current_index: usize,
 }
