@@ -1,6 +1,6 @@
 //! Implements a 3-way merge, using the algorithm described in:
 //!
-//! Sanjeev Khanna , Keshav Kunal , Benjamin C. Pierce, A formal investigation of Diff3 Proceedings
+//! Sanjeev Khanna , Keshav Kunal , Benjamin C. Pierce, A formal investigation of Diff3. Proceedings
 //! of the 27th international conference on Foundations of software technology and theoretical
 //! computer science, December 12-14, 2007, New Delhi, India.
 
