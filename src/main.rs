@@ -195,7 +195,7 @@ impl WikipediaMinusWikipediansHandler {
 
     /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
     fn get_antivandalism_revisions(&self, title: &str) -> Result<Vec<Revision>, String> {
-        let revisions = try!(self.wiki.get_revisions(title, 500));
+        let revisions = try!(self.wiki.get_revisions(title, 100));
         Ok(revisions.into_iter().filter(|revision| revision.comment.contains("vandal")).collect())
     }
 
@@ -246,7 +246,7 @@ impl WikipediaMinusWikipediansHandler {
                                               (&antivandalism_revisions_content).len(), title));
         let merged_contents = antivandalism_revisions_content.into_iter().fold(
             latest_revision_content,
-            |accumulated, (clean, vandalized)| try_merge(&clean, &accumulated, &vandalized));
+            |accumulated, (clean, vandalized)| merge::try_merge(&clean, &accumulated, &vandalized));
         drop(_merge_timer);
 
         let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_contents));

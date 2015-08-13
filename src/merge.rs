@@ -6,6 +6,7 @@
 
 use std::cmp::Ordering;
 use std::iter::FromIterator;
+use std::str::CharIndices;
 
 use ::longest_common_subsequence;
 use ::longest_common_subsequence::CommonSubsequence;
@@ -101,53 +102,131 @@ enum ChunkEnd {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Chunk {
-    /// Parameters: The start (inclusive) and end (exclusive) offsets of the chunk in old.
+    /// Parameters: The start offset and length of the chunk in old.
     Stable(usize, usize),
-    /// Parameters: The (start offset, end offset) of the chunk in old, new, and other
-    /// respectively. Start offset is inclusive, end offset is exclusive.
+    /// Parameters: The (start offset, length) of the chunk in old, new, and other
+    /// respectively.
     Unstable((usize, usize), (usize, usize), (usize, usize)),
+}
+
+#[derive(Clone)]
+// TODO: remove the "pub", and have the tests in longest_common_subsequence.rs use some other Iterator type.
+pub struct Words<'a> {
+    underlying_string: &'a str,
+    // TODO: make this a Chars
+    char_indices: CharIndices<'a>,
+    current_index: usize,
+}
+
+impl<'a> Words<'a> {
+    // TODO: remove the "pub", and have the tests in longest_common_subsequence.rs use some other Iterator type.
+    pub fn new(underlying_string: &'a str) -> Words<'a> {
+        Words {
+            underlying_string: underlying_string,
+            char_indices: underlying_string.char_indices(),
+            current_index: 0,
+        }
+    }
+}
+
+impl<'a> Iterator for Words<'a> {
+    type Item = &'a [u8];
+
+    // TODO: these iterators have .clone().next() called a bunch of times. Might be better to
+    // pre-calculate the next result.
+
+    fn next(&mut self) -> Option<&'a [u8]> {
+        let start = self.current_index;
+        // Find the next space
+        let mut looped = false;
+        loop {
+            match self.char_indices.next() {
+                Some((_, ch)) if ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t' => { break; },
+                Some((_, ch)) => { looped = true; },
+                None => {
+                    if looped {
+                        // TODO: Does this make a copy, and then take a reference to the copy? That
+                        // wouldn't be ideal.
+                        return Some(&self.underlying_string.as_bytes()[start..]);
+                    } else {
+                        return None;
+                    }
+                },
+            }
+        }
+        // Then, find the beginning of the next word
+        loop {
+            match self.char_indices.clone().next() {
+                Some((i, ch)) if !(ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t') => {
+                    self.current_index = i;
+                    return Some(&self.underlying_string.as_bytes()[start..i]);
+                },
+                Some((_, ch)) => { self.char_indices.next(); },
+                None => { return Some(&self.underlying_string.as_bytes()[start..]); },
+            }
+        }
+    }
 }
 
 /// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
 /// `old`. If the strings do not merge together cleanly, returns `new`.
 pub fn try_merge(old: &str, new: &str, other: &str) -> String {
     let _timer = ::Timer::new("Attempted to merge revision".to_owned());
-    let new_lcs = longest_common_subsequence::get_longest_common_subsequence(old, new);
-    let other_lcs = longest_common_subsequence::get_longest_common_subsequence(old, other);
+    let mut old_words = Words::new(old);
+    let mut new_words = Words::new(new);
+    let mut other_words = Words::new(other);
+    let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
+        old_words.clone(), new_words.clone());
+    let other_lcs = longest_common_subsequence::get_longest_common_subsequence(
+        old_words.clone(), other_words.clone());
 
-    let mut byte_slices = Vec::<&[u8]>::new();
-    for chunk in parse(new_lcs, other_lcs, old.len(), new.len(), other.len()) {
+    let mut bytes = Vec::<u8>::new();
+    // TODO: See if these count()s are taking too long (they probably are). If they are, get the
+    // iterator sizes in some other way, piggybacking off the iterator traversals in either this
+    // file or longest_common_subsequence.rs.
+    for chunk in parse(new_lcs, other_lcs, old_words.clone().count(), new_words.clone().count(),
+                       other_words.clone().count()) {
         match chunk {
-            Chunk::Stable(start, end) => {
-                byte_slices.push(&old.as_bytes()[start..end]);
+            Chunk::Stable(start, length) => {
+                for _ in 0..length {
+                    bytes.extend(old_words.next().unwrap());
+                    new_words.next().unwrap();
+                    other_words.next().unwrap();
+                }
             },
-            Chunk::Unstable((old_start, old_end), (new_start, new_end),
-                            (other_start, other_end)) => {
-                let old_chunk = &old.as_bytes()[old_start..old_end];
-                let new_chunk = &new.as_bytes()[new_start..new_end];
-                let other_chunk = &other.as_bytes()[other_start..other_end];
+            Chunk::Unstable((old_start, old_length), (new_start, new_length),
+                            (other_start, other_length)) => {
+                let mut old_chunk: Vec<u8> = Vec::new();
+                let mut new_chunk: Vec<u8> = Vec::new();
+                let mut other_chunk: Vec<u8> = Vec::new();
+                for _ in 0..old_length {
+                    old_chunk.extend(old_words.next().unwrap());
+                }
+                for _ in 0..new_length {
+                    new_chunk.extend(new_words.next().unwrap());
+                }
+                for _ in 0..other_length {
+                    other_chunk.extend(other_words.next().unwrap());
+                }
+
                 if old_chunk == new_chunk && old_chunk != other_chunk {
                     // Changed only in other
-                    byte_slices.push(other_chunk);
+                    bytes.extend(other_chunk);
                 } else if old_chunk != new_chunk && old_chunk == other_chunk {
                     // Changed only in new
-                    byte_slices.push(new_chunk);
+                    bytes.extend(new_chunk);
                 } else if old_chunk != new_chunk && new_chunk == other_chunk {
                     // Falsely conflicting, i.e. changed identically in both new and other
-                    byte_slices.push(new_chunk);
+                    bytes.extend(new_chunk);
                 } else if (old_chunk != new_chunk && old_chunk != other_chunk &&
                            new_chunk != other_chunk) {
-                    // Truly conflicting 
+                    // Truly conflicting
                     return new.to_owned();
                 }
             },
         }
     }
-
-    let mut bytes: Vec<u8> = Vec::new();
-    for byte_slice in byte_slices {
-        bytes.extend(byte_slice);
-    }
+    info!("Successfully merged revision");
     String::from_utf8(bytes).unwrap()
 }
 
@@ -178,7 +257,7 @@ fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence, old_len: usiz
         match chunk_end {
             ChunkEnd::Stable(old, new, other) => {
                 if old != old_offset {
-                    chunks.push(Chunk::Stable(old_offset, old));
+                    chunks.push(Chunk::Stable(old_offset, old - old_offset));
                     old_offset = old;
                     new_offset = new;
                     other_offset = other;
@@ -187,7 +266,8 @@ fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence, old_len: usiz
             ChunkEnd::Unstable(old, new, other) => {
                 if old != old_offset || new != new_offset || other != other_offset {
                     chunks.push(Chunk::Unstable(
-                        (old_offset, old), (new_offset, new), (other_offset, other)));
+                        (old_offset, old - old_offset), (new_offset, new - new_offset),
+                        (other_offset, other - other_offset)));
                     old_offset = old;
                     new_offset = new;
                     other_offset = other;
@@ -203,16 +283,16 @@ fn parse(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence, old_len: usiz
 fn calculate_match_state_transitions(new_lcs: CommonSubsequence, other_lcs: CommonSubsequence) ->
     Vec<MatchStateTransition> {
     let mut match_state_transitions = Vec::from_iter(
-        new_lcs.common_substrings.into_iter().flat_map(|common_substring| vec![
-            NewStartsMatching(common_substring.str1_offset, common_substring.str2_offset),
+        new_lcs.common_regions.into_iter().flat_map(|common_substring| vec![
+            NewStartsMatching(common_substring.iter1_offset, common_substring.iter2_offset),
             NewStopsMatching(
-                common_substring.str1_offset + common_substring.size_bytes,
-                common_substring.str2_offset + common_substring.size_bytes)].into_iter()).chain(
-            other_lcs.common_substrings.into_iter().flat_map(|common_substring| vec![
-                OtherStartsMatching(common_substring.str1_offset, common_substring.str2_offset),
+                common_substring.iter1_offset + common_substring.size,
+                common_substring.iter2_offset + common_substring.size)].into_iter()).chain(
+            other_lcs.common_regions.into_iter().flat_map(|common_substring| vec![
+                OtherStartsMatching(common_substring.iter1_offset, common_substring.iter2_offset),
                 OtherStopsMatching(
-                    common_substring.str1_offset + common_substring.size_bytes,
-                    common_substring.str2_offset + common_substring.size_bytes)].into_iter())));
+                    common_substring.iter1_offset + common_substring.size,
+                    common_substring.iter2_offset + common_substring.size)].into_iter())));
     match_state_transitions.sort();
     match_state_transitions
 }
@@ -265,7 +345,7 @@ fn calculate_next_state(match_state: &MatchState, transition: &MatchStateTransit
         },
         (&OnlyNewMatches(_, _), &NewStopsMatching(_, _)) => NeitherMatch,
 
-        (&OnlyOtherMatches(previous_old_offset, previous_other_offset), 
+        (&OnlyOtherMatches(previous_old_offset, previous_other_offset),
          &NewStartsMatching(current_old_offset, current_new_offset))   => {
             let length = current_old_offset - previous_old_offset;
             BothMatch(current_old_offset, current_new_offset,
@@ -284,9 +364,53 @@ fn calculate_next_state(match_state: &MatchState, transition: &MatchStateTransit
 
 #[cfg(test)]
 mod tests {
-    use super::{Chunk, calculate_match_state_transitions, parse, try_merge};
+    use super::{Chunk, calculate_match_state_transitions, parse, try_merge, Words};
     use super::MatchStateTransition::*;
-    use longest_common_subsequence::{CommonSubsequence, CommonSubstring};
+    use longest_common_subsequence::{CommonSubsequence, CommonRegion};
+
+    #[test]
+    fn test_words_with_no_spaces_at_beginning_or_end() {
+        let mut words = Words::new("0 1 2 3");
+        assert_eq!(Some("0 ".as_bytes()), words.next());
+        assert_eq!(Some("1 ".as_bytes()), words.next());
+        assert_eq!(Some("2 ".as_bytes()), words.next());
+        assert_eq!(Some("3".as_bytes()), words.next());
+        assert_eq!(None, words.next());
+    }
+
+    #[test]
+    fn test_words_with_spaces_at_beginning_and_end() {
+        let mut words = Words::new(" 0 1 2 3 ");
+        assert_eq!(Some(" ".as_bytes()), words.next());
+        assert_eq!(Some("0 ".as_bytes()), words.next());
+        assert_eq!(Some("1 ".as_bytes()), words.next());
+        assert_eq!(Some("2 ".as_bytes()), words.next());
+        assert_eq!(Some("3 ".as_bytes()), words.next());
+        assert_eq!(None, words.next());
+    }
+
+    #[test]
+    fn test_words_with_multiple_spaces() {
+        let mut words = Words::new("  0  1\r\n\t2  3  ");
+        assert_eq!(Some("  ".as_bytes()), words.next());
+        assert_eq!(Some("0  ".as_bytes()), words.next());
+        assert_eq!(Some("1\r\n\t".as_bytes()), words.next());
+        assert_eq!(Some("2  ".as_bytes()), words.next());
+        assert_eq!(Some("3  ".as_bytes()), words.next());
+        assert_eq!(None, words.next());
+    }
+
+    #[test]
+    fn test_words_with_multibyte_characters() {
+        let mut words = Words::new("  0  1\r\n\tさようなら  3  ");
+        assert_eq!(Some("  ".as_bytes()), words.next());
+        assert_eq!(Some("0  ".as_bytes()), words.next());
+        assert_eq!(Some("1\r\n\t".as_bytes()), words.next());
+        assert_eq!(Some("さようなら  ".as_bytes()), words.next());
+        assert_eq!(Some("3  ".as_bytes()), words.next());
+        assert_eq!(None, words.next());
+    }
+
 
     #[test]
     fn test_try_merge_empty() {
@@ -331,17 +455,17 @@ mod tests {
     fn test_calculate_match_state_transitions() {
         // This test case uses the strings from figure 1 of Khanna, Kunal, and Pierce 2007.
         let new_lcs = CommonSubsequence {
-            common_substrings: vec![
-                CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
-                CommonSubstring { str1_offset: 1, str2_offset: 3, size_bytes: 2 },
-                CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 4 };
+            common_regions: vec![
+                CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 1 },
+                CommonRegion { iter1_offset: 1, iter2_offset: 3, size: 2 },
+                CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
+            size: 4 };
         let other_lcs = CommonSubsequence {
-            common_substrings: vec![
-                CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
-                CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
-                CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 5 };
+            common_regions: vec![
+                CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 2 },
+                CommonRegion { iter1_offset: 3, iter2_offset: 2, size: 2 },
+                CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
+            size: 5 };
         let expected = vec![
             NewStartsMatching(0, 0),
             OtherStartsMatching(0, 0),
@@ -368,23 +492,23 @@ mod tests {
         // This uses the strings from figure 1 of Khanna, Kunal, and Pierce 2007, but with an
         // extra unstable chunk at the end.
         let new_lcs = CommonSubsequence {
-            common_substrings: vec![
-                CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 1 },
-                CommonSubstring { str1_offset: 1, str2_offset: 3, size_bytes: 2 },
-                CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 4 };
+            common_regions: vec![
+                CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 1 },
+                CommonRegion { iter1_offset: 1, iter2_offset: 3, size: 2 },
+                CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
+            size: 4 };
         let other_lcs = CommonSubsequence {
-            common_substrings: vec![
-                CommonSubstring { str1_offset: 0, str2_offset: 0, size_bytes: 2 },
-                CommonSubstring { str1_offset: 3, str2_offset: 2, size_bytes: 2 },
-                CommonSubstring { str1_offset: 5, str2_offset: 5, size_bytes: 1 }],
-            size_bytes: 5 };
+            common_regions: vec![
+                CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 2 },
+                CommonRegion { iter1_offset: 3, iter2_offset: 2, size: 2 },
+                CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
+            size: 5 };
         let expected = vec![Chunk::Stable(0, 1),
-                            Chunk::Unstable((1, 1), (1, 3), (1, 1)),
-                            Chunk::Stable(1, 2),
-                            Chunk::Unstable((2, 5), (4, 5), (2, 5)),
-                            Chunk::Stable(5, 6),
-                            Chunk::Unstable((6, 6), (6, 6), (6, 7))];
+                            Chunk::Unstable((1, 0), (1, 2), (1, 0)),
+                            Chunk::Stable(1, 1),
+                            Chunk::Unstable((2, 3), (4, 1), (2, 3)),
+                            Chunk::Stable(5, 1),
+                            Chunk::Unstable((6, 0), (6, 0), (6, 1))];
         assert_eq!(expected, parse(new_lcs, other_lcs, 6, 6, 7));
     }
 }
