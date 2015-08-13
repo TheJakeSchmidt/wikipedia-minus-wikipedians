@@ -30,7 +30,7 @@ enum MatchState {
 /// `old` (if it were not already matching `old` at that index), or stop matching `old` (if if was
 /// already matching `old` at that index).
 ///
-/// For the set of valid (state, transition) pairs, see `merge()`.
+/// For the set of valid (state, transition) pairs, see `calculate_next_state()`.
 #[derive(Debug, PartialEq, Eq)]
 enum MatchStateTransition {
     /// Offset into old, offset into new
