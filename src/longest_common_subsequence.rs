@@ -256,9 +256,6 @@ pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> CommonSubsequ
         }
 
         if iter1_finished && iter2_finished {
-            info!("Last task priority: {}",
-                  task.common_subsequence.size as i64 * 2
-                  - task.iter1_offset as i64 - task.iter2_offset as i64);
             return new_common_subsequence;
         }
 
