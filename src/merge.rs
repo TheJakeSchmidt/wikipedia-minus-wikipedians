@@ -171,10 +171,15 @@ pub fn try_merge(old: &str, new: &str, other: &str) -> String {
     let mut old_words = Words::new(old);
     let mut new_words = Words::new(new);
     let mut other_words = Words::new(other);
+
     let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
         old_words.clone(), new_words.clone());
     let other_lcs = longest_common_subsequence::get_longest_common_subsequence(
         old_words.clone(), other_words.clone());
+    let (new_lcs, other_lcs) = match (new_lcs, other_lcs) {
+        (Some(new_lcs), Some(other_lcs)) => (new_lcs, other_lcs),
+        _ => { return new.to_owned() },
+    };
 
     let mut bytes = Vec::<u8>::new();
     // TODO: See if these count()s are taking too long (they probably are). If they are, get the

@@ -188,9 +188,11 @@ impl<T, I> Ord for Task<T, I> where I: Iterator<Item=T> + Clone {
     }
 }
 
-pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> CommonSubsequence
+// Returns None if the calculation takes more than 500 ms.
+pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> Option<CommonSubsequence>
     where I: Iterator<Item=T> + Clone,
           T: Eq {
+    let timeout_ns = time::precise_time_ns() + 500_000_000;
     let mut work_queue: BinaryHeap<Task<T, I>> = BinaryHeap::new();
     let first_task =
         Task {
@@ -208,6 +210,10 @@ pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> CommonSubsequ
     let mut longest_known_common_subsequences: HashMap<(usize, usize), usize> = HashMap::new();
 
     loop {
+        if time::precise_time_ns() > timeout_ns {
+            return None;
+        }
+
         let mut task = work_queue.pop().unwrap();
 
         // 1. Move forward in both iterators for as long as they match.
@@ -256,7 +262,7 @@ pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> CommonSubsequ
         }
 
         if iter1_finished && iter2_finished {
-            return new_common_subsequence;
+            return Some(new_common_subsequence);
         }
 
         // 3a. Enqueue another task in the work queue that starts one item farther into iter1 and at
@@ -328,7 +334,7 @@ mod tests {
     fn test_lcs_identical_strings() {
         let test_string = "test identical strings";
         let expected = CommonSubsequence::new(vec![CommonRegion::new(0, 0, 22)]);
-        assert_eq!(expected,
+        assert_eq!(Some(expected),
                    get_longest_common_subsequence(test_string.chars(), test_string.chars()));
     }
 
@@ -338,7 +344,7 @@ mod tests {
         let test_string2 = "test diff in middle string";
         let expected =
             CommonSubsequence::new(vec![CommonRegion::new(0, 0, 5), CommonRegion::new(5, 20, 6)]);
-        assert_eq!(expected,
+        assert_eq!(Some(expected),
                    get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 
@@ -349,7 +355,7 @@ mod tests {
         let expected =
             CommonSubsequence::new(vec![CommonRegion::new(0, 0, 2), CommonRegion::new(3, 2, 2),
                                         CommonRegion::new(5, 5, 1)]);
-        assert_eq!(expected,
+        assert_eq!(Some(expected),
                    get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 
@@ -357,7 +363,7 @@ mod tests {
     fn test_lcs_no_words_in_common() {
         let test_string = "abcdefg";
         let test_string2 = "12345678";
-        assert_eq!(CommonSubsequence::new(vec![]),
+        assert_eq!(Some(CommonSubsequence::new(vec![])),
                    get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 
@@ -369,7 +375,7 @@ mod tests {
             CommonSubsequence::new(
                 vec![CommonRegion::new(0, 0, 7), CommonRegion::new(7, 11, 6),
                      CommonRegion::new(14, 17, 1)]);
-        assert_eq!(expected,
+        assert_eq!(Some(expected),
                    get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 

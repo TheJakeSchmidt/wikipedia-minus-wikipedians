@@ -139,6 +139,7 @@ fn spawn_threads<I>(sections: I) ->
                     },
                     Ok(None) => {
                         out_sender.send(merged_content);
+                        drop(_timer);
                         break;
                     },
                     Err(..) => panic!("Failed to receive from in_receiver"),
