@@ -477,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn test_whatever() {
+    fn test_parse() {
         // This uses the strings from figure 1 of Khanna, Kunal, and Pierce 2007, but with an
         // extra unstable chunk at the end.
         let new_lcs = CommonSubsequence::new(vec![
