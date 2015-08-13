@@ -59,6 +59,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::mpsc::channel;
 use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 use std::thread;
 
 use html5ever::Attribute;
@@ -118,44 +119,35 @@ fn create_sections_map<I>(arg: I) -> HashMap<String, String>
     map
 }
 
-/// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
-/// `old`. If the strings to not merge together cleanly, returns `new`.
-// TODO: Since this function isn't treating this like a non-semantic 3-way merge, rename old, new,
-// and other to more wiki-centric names.
-fn try_merge(old: &str, new: &str, other: &str) -> String {
-    let _timer = Timer::new("Attempted to merge revision".to_string());
-
-    let old_sections: Vec<(String, String)> = wiki::parse_sections(old);
-    let new_sections: Vec<(String, String)> = wiki::parse_sections(new);
-    let other_sections: Vec<(String, String)> = wiki::parse_sections(other);
-
-    let new_sections_map = create_sections_map(new_sections);
-    let other_sections_map = create_sections_map(other_sections);
-
-    let mut receivers = Vec::new();
-    for (section_title, section_content) in old_sections {
-        let (sender, receiver) = channel();
-        let new_sections_map = new_sections_map.clone();
-        let other_sections_map = other_sections_map.clone();
+fn spawn_threads<I>(sections: I) ->
+    HashMap<String, (Sender<Option<(String, String)>>, Receiver<String>)>
+    where I: IntoIterator<Item=(String, String)> {
+    let mut channels_map = HashMap::new();
+    for (section_title, section_content) in sections.into_iter() {
+        let (in_sender, in_receiver) = channel::<Option<(String, String)>>(); 
+        let (out_sender, out_receiver) = channel::<String>();
+        // TODO: delete
+        let section_t = section_title.clone();
         thread::spawn(move|| {
-            let start_time = time::precise_time_ns();
-            sender.send(
-                match (new_sections_map.get(&section_title),
-                       other_sections_map.get(&section_title)) {
-                    (Some(new_content), Some(other_content)) => {
-                        let merged = merge::try_merge(&section_content, &new_content, &other_content);
-                        info!("Merge section {}: {} ms", section_title,
-                              (time::precise_time_ns() - start_time) / 1_000_000);
-                        merged
-                    }
-                    _ => section_content
-                });
+            let mut merged_content = section_content;
+            let _timer = Timer::new(format!("Merged all revisions of \"{}\"", section_t));
+            loop {
+                match in_receiver.recv() {
+                    Ok(Some((clean_content, vandalized_content))) => {
+                        merged_content = merge::try_merge(
+                            &clean_content, &merged_content, &vandalized_content);
+                    },
+                    Ok(None) => {
+                        out_sender.send(merged_content);
+                        break;
+                    },
+                    Err(..) => panic!("Failed to receive from in_receiver"),
+                }
+            }
         });
-        receivers.push(receiver);
+        channels_map.insert(section_title, (in_sender, out_receiver));
     }
-
-    // TODO: will unwrap() this ever panic? What can cause recv() to return Err?
-    receivers.into_iter().map(|receiver| receiver.recv().unwrap()).collect::<Vec<_>>().join("")
+    channels_map
 }
 
 fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder: &str)
@@ -216,7 +208,7 @@ impl WikipediaMinusWikipediansHandler {
 
     /// Returns a vector of tuples containing the contents of each revision and its parent revision.
     fn get_revisions_content(&self, title: String, revisions: Vec<Revision>)
-                             -> Result<Vec<(String, String)>, String> {
+                             -> Result<Vec<(Vec<(String, String)>, Vec<(String, String)>)>, String> {
         let _timer =
             Timer::new(format!("Got content of {} revisions of \"{}\"", revisions.len(), title));
         let mut receivers: Vec<Receiver<(Result<String, String>, Result<String, String>)>> =
@@ -236,12 +228,19 @@ impl WikipediaMinusWikipediansHandler {
         }
 
         // Elements: (revision content, parent revision content)
-        let mut revisions_content: Vec<(String, String)> = Vec::with_capacity(revisions.len());
+        let mut revisions_content: Vec<(Vec<(String, String)>, Vec<(String, String)>)> =
+            Vec::with_capacity(revisions.len());
         for receiver in receivers {
             let (clean_result, vandalized_result) =
                 try_display!(receiver.recv(), "Failed to get data from thread");
-            revisions_content.push((try!(clean_result), try!(vandalized_result)));
+            // TODO: I don't know why &(try!(clean_result)) doesn't work in the parse_sections()
+            // call. Investigate.
+            let clean_result = try!(clean_result);
+            let vandalized_result = try!(vandalized_result);
+            revisions_content.push((wiki::parse_sections(&clean_result),
+                                    wiki::parse_sections(&vandalized_result)));
         }
+
         Ok(revisions_content)
     }
 
@@ -250,21 +249,54 @@ impl WikipediaMinusWikipediansHandler {
         info!("Canonical page title for \"{}\" is \"{}\"", title, canonical_title);
 
         let antivandalism_revisions = try!(self.get_antivandalism_revisions(&canonical_title));
-        let antivandalism_revisions_content =
+        let antivandalism_revisions_sections =
             try!(self.get_revisions_content((*canonical_title).clone(), antivandalism_revisions));
 
         let latest_revision = try!(self.wiki.get_latest_revision(&canonical_title));
         let latest_revision_content =
-            try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid));
+                try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid));
+        let latest_revision_sections = wiki::parse_sections(&latest_revision_content);
 
         let _merge_timer = Timer::new(format!("Merged {} revisions of \"{}\"",
-                                              (&antivandalism_revisions_content).len(), title));
-        let merged_contents = antivandalism_revisions_content.into_iter().fold(
-            latest_revision_content,
-            |accumulated, (clean, vandalized)| try_merge(&clean, &accumulated, &vandalized));
+                                              (&antivandalism_revisions_sections).len(), title));
+
+        let channels: HashMap<String, (Sender<_>, Receiver<_>)> =
+            spawn_threads(latest_revision_sections.clone());
+        for (clean_sections, vandalized_sections) in antivandalism_revisions_sections {
+            let mut clean_sections_map = create_sections_map(clean_sections);
+            let mut vandalized_sections_map = create_sections_map(vandalized_sections);
+            for section in &latest_revision_sections {
+                let section_title = &section.0;
+                match (clean_sections_map.remove(section_title),
+                       vandalized_sections_map.remove(section_title)) {
+                    (Some(clean_section_content), Some(vandalized_section_content)) => {
+                        channels.get(section_title).unwrap().0.send(
+                            Some((clean_section_content, vandalized_section_content)));
+                    }
+                    _ => (),
+                }
+            }
+        }
+
+        // TODO: can't get "for (sender, _) in channels.values()" to work. Fix it.
+        for val in channels.values() {
+            val.0.send(None);
+        }
+
+        // TODO: get this working, instead of the for loop below
+        //let merged_content =
+        //    latest_revision_sections.into_iter().map(
+        //        |section_title, _| channels.get(&section_title).unwrap().1.recv().unwrap())
+        //    .join("");
+        let mut merged_content = String::new();
+        for (section_title, _) in latest_revision_sections {
+            let received_value = channels.get(&section_title).unwrap().1.recv().unwrap();
+            merged_content.push_str(&received_value);
+        }
+
         drop(_merge_timer);
 
-        let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_contents));
+        let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
         // Note: "title" rather than "canonical_title", so that redirects look right.
         let current_page_contents = try!(self.wiki.get_current_page_content(&title));
         let placeholder = format!("WMW_PLACEHOLDER_TEXT_{}", rand::random::<u64>());
@@ -386,33 +418,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{try_merge, replace_node_with_placeholder};
-
-    #[test]
-    fn test_merge_clean() {
-        let old = "First line.\n\nSecond line.\n";
-        let new = "First line.\n\nSecond line changed.\n";
-        let other = "First line changed.\n\nSecond line.\n";
-        assert_eq!("First line changed.\n\nSecond line changed.\n".to_string(),
-                   try_merge(old, new, other));
-    }
-
-    #[test]
-    fn test_merge_conflicting() {
-        let old = "First line.\n\nSecond line.\n";
-        let new = "First line.\n\nSecond line changed one way.\n";
-        let other = "First line changed.\n\nSecond line changed a different way.\n";
-        assert_eq!(new, try_merge(old, new, other));
-    }
-
-    #[test]
-    fn test_merge_special_characters() {
-        let old = "First line.\n\nSecond line.\n";
-        let new = "First line.\n\nSecond line 𐅃.\n";
-        let other = "First line さようなら.\n\nSecond line.\n";
-        assert_eq!("First line さようなら.\n\nSecond line 𐅃.\n".to_string(),
-                   try_merge(old, new, other));
-    }
+    use super::{replace_node_with_placeholder};
 
     #[test]
     fn test_replace_html_content() {
