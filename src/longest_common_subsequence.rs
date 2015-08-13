@@ -42,7 +42,6 @@ use std::collections::binary_heap::BinaryHeap;
 use std::ops::Index;
 use std::ops::IndexMut;
 
-// TODO: constructor for these?
 #[derive(PartialEq, Clone, Debug)]
 pub struct CommonRegion {
     /// The offset into iter1 of the beginning of the common region.
@@ -53,11 +52,31 @@ pub struct CommonRegion {
     pub size: usize,
 }
 
+impl CommonRegion {
+    pub fn new(iter1_offset: usize, iter2_offset: usize, size: usize) -> CommonRegion {
+        CommonRegion {
+            iter1_offset: iter1_offset,
+            iter2_offset: iter2_offset,
+            size: size,
+        }
+    }
+}
+
 #[derive(PartialEq, Clone, Debug)]
 pub struct CommonSubsequence {
     pub common_regions: Vec<CommonRegion>,
     /// The total length of the common subsequence.
     pub size: usize,
+}
+
+impl CommonSubsequence {
+    pub fn new(common_regions: Vec<CommonRegion>) -> CommonSubsequence {
+        let size = (&common_regions).into_iter().fold(0, |sum, region| sum + region.size);
+        CommonSubsequence {
+            common_regions: common_regions,
+            size: size,
+        }
+    }
 }
 
 /// A Task represents a step of the algorithm that needs to be done. A Task records a possible
@@ -177,7 +196,7 @@ pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> CommonSubsequ
         Task {
             iter1_offset: 0,
             iter2_offset: 0,
-            common_subsequence: CommonSubsequence { common_regions: vec![], size: 0 },
+            common_subsequence: CommonSubsequence::new(vec![]),
             iter1: iter1,
             iter2: iter2,
         };
@@ -232,11 +251,7 @@ pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> CommonSubsequ
         let mut new_common_subsequence = task.common_subsequence.clone();
         if matching_items > 0 {
             new_common_subsequence.common_regions.push(
-                CommonRegion {
-                    iter1_offset: task.iter1_offset,
-                    iter2_offset: task.iter2_offset,
-                    size: matching_items,
-                });
+                CommonRegion::new(task.iter1_offset, task.iter2_offset, matching_items));
             new_common_subsequence.size += matching_items;
         }
 
@@ -315,11 +330,7 @@ mod tests {
     #[test]
     fn test_lcs_identical_strings() {
         let test_string = "test identical strings";
-        let expected =
-            CommonSubsequence {
-                common_regions: vec![
-                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 22 }],
-                size: 22 };
+        let expected = CommonSubsequence::new(vec![CommonRegion::new(0, 0, 22)]);
         assert_eq!(expected,
                    get_longest_common_subsequence(test_string.chars(), test_string.chars()));
     }
@@ -329,11 +340,7 @@ mod tests {
         let test_string = "test string";
         let test_string2 = "test diff in middle string";
         let expected =
-            CommonSubsequence {
-                common_regions: vec![
-                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 5 },
-                    CommonRegion { iter1_offset: 5, iter2_offset: 20, size: 6 }],
-                size: 11 };
+            CommonSubsequence::new(vec![CommonRegion::new(0, 0, 5), CommonRegion::new(5, 20, 6)]);
         assert_eq!(expected,
                    get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
@@ -343,12 +350,8 @@ mod tests {
         let test_string = "123456";
         let test_string2 = "124536";
         let expected =
-            CommonSubsequence {
-                common_regions: vec![
-                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 2 },
-                    CommonRegion { iter1_offset: 3, iter2_offset: 2, size: 2 },
-                    CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
-                size: 5 };
+            CommonSubsequence::new(vec![CommonRegion::new(0, 0, 2), CommonRegion::new(3, 2, 2),
+                                        CommonRegion::new(5, 5, 1)]);
         assert_eq!(expected,
                    get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
@@ -357,9 +360,7 @@ mod tests {
     fn test_lcs_no_words_in_common() {
         let test_string = "abcdefg";
         let test_string2 = "12345678";
-        let expected =
-            CommonSubsequence { common_regions: vec![], size: 0 };
-        assert_eq!(expected,
+        assert_eq!(CommonSubsequence::new(vec![]),
                    get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }
 
@@ -368,12 +369,9 @@ mod tests {
         let test_string = "Test さよstring𐅃.";
         let test_string2 = "Test さようなら string.";
         let expected =
-            CommonSubsequence {
-                common_regions: vec![
-                    CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 7 },
-                    CommonRegion { iter1_offset: 7, iter2_offset: 11, size: 6 },
-                    CommonRegion { iter1_offset: 14, iter2_offset: 17, size: 1 }],
-                size: 14 };
+            CommonSubsequence::new(
+                vec![CommonRegion::new(0, 0, 7), CommonRegion::new(7, 11, 6),
+                     CommonRegion::new(14, 17, 1)]);
         assert_eq!(expected,
                    get_longest_common_subsequence(test_string.chars(), test_string2.chars()));
     }

@@ -451,18 +451,10 @@ mod tests {
     #[test]
     fn test_calculate_match_state_transitions() {
         // This test case uses the strings from figure 1 of Khanna, Kunal, and Pierce 2007.
-        let new_lcs = CommonSubsequence {
-            common_regions: vec![
-                CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 1 },
-                CommonRegion { iter1_offset: 1, iter2_offset: 3, size: 2 },
-                CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
-            size: 4 };
-        let other_lcs = CommonSubsequence {
-            common_regions: vec![
-                CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 2 },
-                CommonRegion { iter1_offset: 3, iter2_offset: 2, size: 2 },
-                CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
-            size: 5 };
+        let new_lcs = CommonSubsequence::new(vec![
+            CommonRegion::new(0, 0, 1), CommonRegion::new(1, 3, 2), CommonRegion::new(5, 5, 1)]);
+        let other_lcs = CommonSubsequence::new(vec![
+            CommonRegion::new(0, 0, 2), CommonRegion::new(3, 2, 2), CommonRegion::new(5, 5, 1)]);
         let expected = vec![
             NewStartsMatching(0, 0),
             OtherStartsMatching(0, 0),
@@ -488,18 +480,10 @@ mod tests {
     fn test_whatever() {
         // This uses the strings from figure 1 of Khanna, Kunal, and Pierce 2007, but with an
         // extra unstable chunk at the end.
-        let new_lcs = CommonSubsequence {
-            common_regions: vec![
-                CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 1 },
-                CommonRegion { iter1_offset: 1, iter2_offset: 3, size: 2 },
-                CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
-            size: 4 };
-        let other_lcs = CommonSubsequence {
-            common_regions: vec![
-                CommonRegion { iter1_offset: 0, iter2_offset: 0, size: 2 },
-                CommonRegion { iter1_offset: 3, iter2_offset: 2, size: 2 },
-                CommonRegion { iter1_offset: 5, iter2_offset: 5, size: 1 }],
-            size: 5 };
+        let new_lcs = CommonSubsequence::new(vec![
+            CommonRegion::new(0, 0, 1), CommonRegion::new(1, 3, 2), CommonRegion::new(5, 5, 1)]);
+        let other_lcs = CommonSubsequence::new(vec![
+            CommonRegion::new(0, 0, 2), CommonRegion::new(3, 2, 2), CommonRegion::new(5, 5, 1)]);
         let expected = vec![Chunk::Stable(0, 1),
                             Chunk::Unstable((1, 0), (1, 2), (1, 0)),
                             Chunk::Stable(1, 1),
