@@ -4,6 +4,8 @@
 //! of the 27th international conference on Foundations of software technology and theoretical
 //! computer science, December 12-14, 2007, New Delhi, India.
 
+extern crate num;
+
 use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::str::CharIndices;
@@ -171,6 +173,12 @@ pub fn try_merge(old: &str, new: &str, other: &str) -> String {
     let mut old_words = Words::new(old);
     let mut new_words = Words::new(new);
     let mut other_words = Words::new(other);
+
+    // It entirely too long to calculate diffs this large. Our latency budget doesn't cover it.
+    if num::abs(old.len() as i64 - other.len() as i64) > 1000 {
+        info!("Skipped large diff");
+        return new.to_owned();
+    }
 
     let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
         old_words.clone(), new_words.clone());
