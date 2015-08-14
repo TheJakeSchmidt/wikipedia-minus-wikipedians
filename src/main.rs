@@ -345,8 +345,8 @@ impl WikipediaMinusWikipediansHandler {
         let _marker_timer = Timer::new("Replaced merge markers in HTML".to_string());
         let partially_finished_html_body = remove_merge_markers_from_html(raw_html_body);
         let finished_html_body =
-            partially_finished_html_body.replace(START_MARKER, "<font color=\"red\">")
-            .replace(END_MARKER, "</font>");
+            partially_finished_html_body.replace(START_MARKER, "<span style=\"color: red\">")
+            .replace(END_MARKER, "</span>");
         drop(_marker_timer);
         let page_contents_with_placeholder = try!(current_page_contents_receiver.recv().unwrap());
         Ok(page_contents_with_placeholder.replace(&placeholder, &finished_html_body))
