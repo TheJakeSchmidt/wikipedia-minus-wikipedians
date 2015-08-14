@@ -199,11 +199,21 @@ impl WikipediaMinusWikipediansHandler {
         Ok(revisions.into_iter().filter(|revision| revision.comment.contains("vandal")).collect())
     }
 
-    fn get_current_page_content(&self, title: &str) -> Receiver<Result<String, String>> {
+    fn get_current_page_content(&self, title: &str, placeholder: &str) ->
+        Receiver<Result<String, String>> {
         let (sender, receiver) = channel();
         let wiki = self.wiki.clone();
         let title = title.to_string().clone();
-        thread::spawn(move|| { sender.send(wiki.get_current_page_content(&title)); });
+        let placeholder = placeholder.to_string().clone();
+        thread::spawn(move|| {
+            match wiki.get_current_page_content(&title) {
+                Ok(content) => {
+                    sender.send(
+                        replace_node_with_placeholder(&content, "mw-content-text", &placeholder));
+                },
+                Err(msg) => { sender.send(Err(msg)); }
+            }
+        });
         receiver
     }
 
@@ -263,7 +273,8 @@ impl WikipediaMinusWikipediansHandler {
     }
 
     fn get_page_with_vandalism_restored(&self, title: &str) -> Result<String, String> {
-        let current_page_contents_receiver = self.get_current_page_content(&title);
+        let placeholder = format!("WMW_PLACEHOLDER_TEXT_{}", rand::random::<u64>());
+        let current_page_contents_receiver = self.get_current_page_content(&title, &placeholder);
 
         // TODO: This almost surely doesn't need to be an Arc.
         let canonical_title = Arc::new(try!(self.wiki.get_canonical_title(title)));
@@ -297,12 +308,8 @@ impl WikipediaMinusWikipediansHandler {
         drop(_timer);
 
         let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
-        let current_page_contents = try!(current_page_contents_receiver.recv().unwrap());
-        let placeholder = format!("WMW_PLACEHOLDER_TEXT_{}", rand::random::<u64>());
-        let page_contents_with_placeholder =
-            try!(replace_node_with_placeholder(
-                &current_page_contents, "mw-content-text", &placeholder));
-        Ok(&page_contents_with_placeholder.replace(&placeholder, &html_body))
+        let page_contents_with_placeholder = try!(current_page_contents_receiver.recv().unwrap());
+        Ok(page_contents_with_placeholder.replace(&placeholder, &html_body))
     }
 }
 
