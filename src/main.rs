@@ -206,32 +206,37 @@ impl WikipediaMinusWikipediansHandler {
         senders: HashMap<String, Sender<Option<(String, String)>>>) -> Result<(), String> {
         let _timer =
             Timer::new(format!("Got content of {} revisions of \"{}\"", revisions.len(), title));
-        let mut receivers: Vec<Receiver<(Result<String, String>, Result<String, String>)>> =
+        let mut receivers: Vec<(Receiver<Result<String, String>>,
+                                Receiver<Result<String, String>>)> =
             Vec::with_capacity(revisions.len());
         for revision in &revisions {
-            let (sender, receiver) = channel();
-            let wiki = self.wiki.clone();
-            let title = title.to_string().clone();
-            let revision = revision.clone();
-            thread::spawn(move|| {
-                // TODO: check result?
-                // TODO: parse the sections in here. Not in the main thread.
-                sender.send(
-                    (wiki.get_revision_content(&title, revision.revid),
-                     wiki.get_revision_content(&title, revision.parentid)));
-            });
-            receivers.push(receiver);
+            let mut inner_receivers = Vec::new();
+            for revision_id in vec![revision.revid, revision.parentid] {
+                let (sender, receiver) = channel();
+                let wiki = self.wiki.clone();
+                let title = title.to_string().clone();
+                let revision = revision.clone();
+                thread::spawn(move|| {
+                    // TODO: check result?
+                    // TODO: parse the sections in here. Not in the main thread.
+                    sender.send(wiki.get_revision_content(&title, revision_id));
+                });
+                inner_receivers.push(receiver);
+            }
+            receivers.push((inner_receivers.remove(0), inner_receivers.remove(0)));
         }
 
-        for receiver in receivers {
-            let (clean_result, vandalized_result) =
-                try_display!(receiver.recv(), "Failed to get data from thread");
-            let clean_result = try!(clean_result);
-            let vandalized_result = try!(vandalized_result);
+        for (clean_receiver, vandalized_receiver) in receivers {
+            let clean_result =
+                try!(try_display!(clean_receiver.recv(), "Failed to get data from thread"));
             let mut clean_sections: HashMap<String, String> =
                 HashMap::from_iter(wiki::parse_sections(&clean_result));
+
+            let vandalized_result =
+                try!(try_display!(vandalized_receiver.recv(), "Failed to get data from thread"));
             let mut vandalized_sections: HashMap<String, String> =
                 HashMap::from_iter(wiki::parse_sections(&vandalized_result));
+
             for (title, sender) in senders.iter() {
                 match (clean_sections.remove(title), vandalized_sections.remove(title)) {
                     (Some(clean_content), Some(vandalized_content)) => {
