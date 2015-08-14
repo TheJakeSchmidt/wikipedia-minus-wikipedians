@@ -220,7 +220,9 @@ pub fn try_merge(old: &str, new: &str, other: &str) -> String {
 
                 if old_chunk == new_chunk && old_chunk != other_chunk {
                     // Changed only in other
+                    bytes.extend(::START_MARKER.as_bytes());
                     bytes.extend(other_chunk);
+                    bytes.extend(::END_MARKER.as_bytes());
                 } else if old_chunk != new_chunk && old_chunk == other_chunk {
                     // Changed only in new
                     bytes.extend(new_chunk);
@@ -375,6 +377,7 @@ mod tests {
     use super::{Chunk, calculate_match_state_transitions, parse, try_merge, Words};
     use super::MatchStateTransition::*;
     use longest_common_subsequence::{CommonSubsequence, CommonRegion};
+    use regex::Regex;
 
     #[test]
     fn test_words_with_no_spaces_at_beginning_or_end() {
@@ -419,7 +422,6 @@ mod tests {
         assert_eq!(None, words.next());
     }
 
-
     #[test]
     fn test_try_merge_empty() {
         assert_eq!("".to_string(), try_merge("", "", ""));
@@ -430,8 +432,9 @@ mod tests {
         let old = "First sentence. Second sentence.";
         let new = "First sentence. Second sentence changed.";
         let other = "First sentence changed. Second sentence.";
-        assert_eq!("First sentence changed. Second sentence changed.".to_string(),
-                   try_merge(old, new, other));
+        let expected = format!("First {}sentence changed. {}Second sentence changed.",
+                               ::START_MARKER, ::END_MARKER);
+        assert_eq!(expected, try_merge(old, new, other));
     }
 
     #[test]
@@ -447,7 +450,8 @@ mod tests {
         let old = "Test string. ";
         let new = "Test 1 string. ";
         let other = "Test string. 2";
-        assert_eq!("Test 1 string. 2".to_string(), try_merge(old, new, other));
+        let expected = format!("Test 1 string. {}2{}", ::START_MARKER, ::END_MARKER);
+        assert_eq!(expected, try_merge(old, new, other));
     }
 
     #[test]
@@ -455,8 +459,9 @@ mod tests {
         let old = "First sentence. Second sentence.";
         let new = "First sentence. Second sentence 𐅃.";
         let other = "First sentence さようなら. Second sentence.";
-        assert_eq!("First sentence さようなら. Second sentence 𐅃.".to_string(),
-                   try_merge(old, new, other));
+        let expected = format!(
+            "First {}sentence さようなら. {}Second sentence 𐅃.", ::START_MARKER, ::END_MARKER);
+        assert_eq!(expected, try_merge(old, new, other));
     }
 
     #[test]

@@ -18,6 +18,14 @@ extern crate tendril;
 extern crate time;
 extern crate url;
 
+// To mark areas of the merged text that were merged in from vandalized edits, the code uses
+// placeholder characters at the start and end of each merged region.
+//
+// These two characters are taken from a Unicode Private Use Area, so they should never appear in
+// actual Wikipedia text.
+const START_MARKER: &'static str = "\u{E000}";
+const END_MARKER: &'static str = "\u{E001}";
+
 /// Helper macro for unwrapping Result values whose E types implement std::fmt::Display. For Ok(),
 /// evaluates to the contained value. For Err(), returns early with an Err containing the formatted
 /// error.
@@ -79,6 +87,8 @@ use iron::middleware::Handler;
 use iron::mime::Mime;
 use iron::mime::SubLevel;
 use iron::mime::TopLevel;
+use regex::Captures;
+use regex::Regex;
 use tempfile::NamedTempFile;
 
 use wiki::Revision;
@@ -181,6 +191,30 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
             .map(|result| result.unwrap())
             .next().ok_or(format!("No node with ID {} found", id)),
     }
+}
+
+fn remove_merge_markers_from_html(html: String) -> String {
+    // TODO: clean up this whole function. regex[1..4] are not good names.
+    // TODO: use START_MARKER and END_MARKER constants here.
+    // Finds markers where the end, but not the start, is inside a tag.
+    let regex1 = regex!(r"\x{E000}([^\x{E001}]*?)<([^>]*?)\x{E001}([^>]*?)>");
+    // Finds markers where the start, but not the end, is inside a tag.
+    let regex2 = regex!(r"<([^>]*?)\x{E000}([^>]*?)>([^\x{E000}]*?)\x{E000}");
+    // Finds markers where both the start and end are inside tags.
+    let regex3 = regex!(r"<([^>]*?)\x{E000}([^>]*?)>([^\x{E000}\x{E001}]*?)<([^>]*?)\x{E001}([^>]*?)>");
+
+    let html1 = regex1.replace_all(
+        &html, |captures: &Captures|
+        format!("{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
+                captures.at(3).unwrap()));
+    let html2 = regex2.replace_all(
+        &html1, |captures: &Captures|
+        format!("<{}{}>{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
+                captures.at(3).unwrap()));
+    regex3.replace_all(
+        &html2, |captures: &Captures|
+        format!("<{}{}>{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
+                captures.at(3).unwrap(), captures.at(4).unwrap(), captures.at(5).unwrap()))
 }
 
 struct WikipediaMinusWikipediansHandler {
@@ -307,9 +341,15 @@ impl WikipediaMinusWikipediansHandler {
 
         drop(_timer);
 
-        let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
+        let raw_html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
+        let _marker_timer = Timer::new("Replaced merge markers in HTML".to_string());
+        let partially_finished_html_body = remove_merge_markers_from_html(raw_html_body);
+        let finished_html_body =
+            partially_finished_html_body.replace(START_MARKER, "<font color=\"red\">")
+            .replace(END_MARKER, "</font>");
+        drop(_marker_timer);
         let page_contents_with_placeholder = try!(current_page_contents_receiver.recv().unwrap());
-        Ok(page_contents_with_placeholder.replace(&placeholder, &html_body))
+        Ok(page_contents_with_placeholder.replace(&placeholder, &finished_html_body))
     }
 }
 
@@ -424,7 +464,32 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{replace_node_with_placeholder};
+    use super::{remove_merge_markers_from_html, replace_node_with_placeholder, START_MARKER,
+                END_MARKER};
+
+    #[test]
+    fn test_remove_merge_markers_from_html() {
+        let html = format!("<html><body>{}<img src=\"asdf{}.jpg\"></body></html>",
+                           START_MARKER, END_MARKER);
+        let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
+        assert_eq!(expected, remove_merge_markers_from_html(html));
+    }
+
+    #[test]
+    fn test_remove_merge_markers_from_html_keep() {
+        let html = format!("<html><body>{}<img src=\"asdf.jpg\">{}</body></html>",
+                           START_MARKER, END_MARKER);
+        assert_eq!(html.clone(), remove_merge_markers_from_html(html));
+    }
+
+    #[test]
+    fn test_remove_merge_markers_from_html_keep_one_remove_one() {
+        let html = format!("<html><body>{}<b>text{}</b>{}<img src=\"asdf{}.jpg\"></body></html>",
+                           START_MARKER, END_MARKER, START_MARKER, END_MARKER);
+        let expected = format!("<html><body>{}<b>text{}</b><img src=\"asdf.jpg\"></body></html>",
+                               START_MARKER, END_MARKER);
+        assert_eq!(expected, remove_merge_markers_from_html(html));
+    }
 
     #[test]
     fn test_replace_html_content() {
