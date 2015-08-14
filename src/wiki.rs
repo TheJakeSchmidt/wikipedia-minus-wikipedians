@@ -45,8 +45,6 @@ impl Wiki {
     // and failed (redis::Connection isn't Send or Sync, and I couldn't get thread-locals to work).
     // Note: Panics if called when `self.redis_connection_info` is `None`.
     fn get_redis_connection(&self) -> redis::Connection {
-        // TODO: delete the format!();
-        let _timer = ::Timer::new(format!("Connected to Redis"));
         // The redis-rs docs "heavily encourage" the use of URLs instead of the
         // ConnectionInfo struct, but redis::IntoConnectionInfo is only implemented for
         // &str, so I can't construct a URL and pass it in without using String::as_str(),
