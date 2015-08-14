@@ -120,12 +120,12 @@ impl Drop for Timer {
 }
 
 fn spawn_threads<I>(sections: I) ->
-    (HashMap<String, Sender<Option<(String, String)>>>, HashMap<String, Receiver<String>>)
+    (HashMap<String, Sender<Option<(String, String, u64)>>>, HashMap<String, Receiver<String>>)
     where I: IntoIterator<Item=(String, String)> {
     let mut senders_map = HashMap::new();
     let mut receivers_map = HashMap::new();
     for (section_title, section_content) in sections.into_iter() {
-        let (in_sender, in_receiver) = channel::<Option<(String, String)>>(); 
+        let (in_sender, in_receiver) = channel::<Option<(String, String, u64)>>();
         let (out_sender, out_receiver) = channel::<String>();
         // TODO: delete
         let section_t = section_title.clone();
@@ -134,9 +134,10 @@ fn spawn_threads<I>(sections: I) ->
             let _timer = Timer::new(format!("Merged all revisions of \"{}\"", section_t));
             loop {
                 match in_receiver.recv() {
-                    Ok(Some((clean_content, vandalized_content))) => {
+                    Ok(Some((clean_content, vandalized_content, revision_id))) => {
                         merged_content = merge::try_merge(
-                            &clean_content, &merged_content, &vandalized_content);
+                            &clean_content, &merged_content, &vandalized_content,
+                            &revision_id.to_string());
                     },
                     Ok(None) => {
                         out_sender.send(merged_content);
@@ -197,11 +198,14 @@ fn remove_merge_markers_from_html(html: String) -> String {
     // TODO: clean up this whole function. regex[1..4] are not good names.
     // TODO: use START_MARKER and END_MARKER constants here.
     // Finds markers where the end, but not the start, is inside a tag.
-    let regex1 = regex!(r"\x{E000}([^\x{E001}]*?)<([^>]*?)\x{E001}([^>]*?)>");
+    let regex1 = regex!(
+        r"\x{E000}[0-9]+\x{E000}([^\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
     // Finds markers where the start, but not the end, is inside a tag.
-    let regex2 = regex!(r"<([^>]*?)\x{E000}([^>]*?)>([^\x{E000}]*?)\x{E000}");
+    let regex2 = regex!(
+        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}]*?)\x{E000}[0-9]+\x{E000}");
     // Finds markers where both the start and end are inside tags.
-    let regex3 = regex!(r"<([^>]*?)\x{E000}([^>]*?)>([^\x{E000}\x{E001}]*?)<([^>]*?)\x{E001}([^>]*?)>");
+    let regex3 = regex!(
+        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
 
     let html1 = regex1.replace_all(
         &html, |captures: &Captures|
@@ -255,10 +259,10 @@ impl WikipediaMinusWikipediansHandler {
     /// section's content to the Sender associated with the section's title in `senders`.
     fn fetch_revisions_content(
         &self, title: String, revisions: Vec<Revision>,
-        senders: HashMap<String, Sender<Option<(String, String)>>>) -> Result<(), String> {
+        senders: HashMap<String, Sender<Option<(String, String, u64)>>>) -> Result<(), String> {
         let _timer =
             Timer::new(format!("Got content of {} revisions of \"{}\"", revisions.len(), title));
-        let mut receivers: Vec<(Receiver<Result<Vec<(String, String)>, String>>,
+        let mut receivers: Vec<(u64, Receiver<Result<Vec<(String, String)>, String>>,
                                 Receiver<Result<Vec<(String, String)>, String>>)> =
             Vec::with_capacity(revisions.len());
         for revision in &revisions {
@@ -279,10 +283,11 @@ impl WikipediaMinusWikipediansHandler {
                 });
                 inner_receivers.push(receiver);
             }
-            receivers.push((inner_receivers.remove(0), inner_receivers.remove(0)));
+            receivers.push(
+                (revision.parentid, inner_receivers.remove(0), inner_receivers.remove(0)));
         }
 
-        for (clean_receiver, vandalized_receiver) in receivers {
+        for (revision_id, clean_receiver, vandalized_receiver) in receivers {
             let mut clean_sections: HashMap<String, String> =
                 HashMap::from_iter(
                     try!(try_display!(clean_receiver.recv(), "Failed to get data from thread")));
@@ -293,7 +298,7 @@ impl WikipediaMinusWikipediansHandler {
             for (title, sender) in senders.iter() {
                 match (clean_sections.remove(title), vandalized_sections.remove(title)) {
                     (Some(clean_content), Some(vandalized_content)) => {
-                        sender.send(Some((clean_content, vandalized_content)));
+                        sender.send(Some((clean_content, vandalized_content, revision_id)));
                     },
                     _ => (),
                 }
@@ -344,11 +349,17 @@ impl WikipediaMinusWikipediansHandler {
         let raw_html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
         let _marker_timer = Timer::new("Replaced merge markers in HTML".to_string());
         let partially_finished_html_body = remove_merge_markers_from_html(raw_html_body);
+        // TODO: Move this elsewhere, use constants, etc.
+        let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
+        let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
         let finished_html_body =
-            partially_finished_html_body.replace(START_MARKER, "<span style=\"color: red\">")
-            .replace(END_MARKER, "</span>");
+            start_regex.replace_all(
+                &end_regex.replace_all(&partially_finished_html_body, "</span>"),
+                |captures: &Captures|
+                format!("<span style=\"color: red\" class=\"vandalism-{}\">", captures.at(1).unwrap()));
         drop(_marker_timer);
         let page_contents_with_placeholder = try!(current_page_contents_receiver.recv().unwrap());
+
         Ok(page_contents_with_placeholder.replace(&placeholder, &finished_html_body))
     }
 }
@@ -469,25 +480,28 @@ mod tests {
 
     #[test]
     fn test_remove_merge_markers_from_html() {
-        let html = format!("<html><body>{}<img src=\"asdf{}.jpg\"></body></html>",
-                           START_MARKER, END_MARKER);
+        let html = format!("<html><body>{}123{}<img src=\"asdf{}123{}.jpg\"></body></html>",
+                           START_MARKER, START_MARKER, END_MARKER, END_MARKER);
         let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
         assert_eq!(expected, remove_merge_markers_from_html(html));
     }
 
     #[test]
     fn test_remove_merge_markers_from_html_keep() {
-        let html = format!("<html><body>{}<img src=\"asdf.jpg\">{}</body></html>",
-                           START_MARKER, END_MARKER);
+        let html = format!("<html><body>{}456{}<img src=\"asdf.jpg\">{}456{}</body></html>",
+                           START_MARKER, START_MARKER, END_MARKER, END_MARKER);
         assert_eq!(html.clone(), remove_merge_markers_from_html(html));
     }
 
     #[test]
     fn test_remove_merge_markers_from_html_keep_one_remove_one() {
-        let html = format!("<html><body>{}<b>text{}</b>{}<img src=\"asdf{}.jpg\"></body></html>",
-                           START_MARKER, END_MARKER, START_MARKER, END_MARKER);
-        let expected = format!("<html><body>{}<b>text{}</b><img src=\"asdf.jpg\"></body></html>",
-                               START_MARKER, END_MARKER);
+        let html = format!(
+            "<html><body>{}234{}<b>text{}234{}</b>{}567{}<img src=\"asdf{}567{}.jpg\"></body></html>",
+            START_MARKER, START_MARKER, END_MARKER, END_MARKER, START_MARKER, START_MARKER,
+            END_MARKER, END_MARKER);
+        let expected = format!(
+            "<html><body>{}234{}<b>text{}234{}</b><img src=\"asdf.jpg\"></body></html>",
+            START_MARKER, START_MARKER, END_MARKER, END_MARKER);
         assert_eq!(expected, remove_merge_markers_from_html(html));
     }
 

@@ -169,7 +169,7 @@ impl<'a> Iterator for Words<'a> {
 
 /// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
 /// `old`. If the strings do not merge together cleanly, returns `new`.
-pub fn try_merge(old: &str, new: &str, other: &str) -> String {
+pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> String {
     let mut old_words = Words::new(old);
     let mut new_words = Words::new(new);
     let mut other_words = Words::new(other);
@@ -221,7 +221,11 @@ pub fn try_merge(old: &str, new: &str, other: &str) -> String {
                 if old_chunk == new_chunk && old_chunk != other_chunk {
                     // Changed only in other
                     bytes.extend(::START_MARKER.as_bytes());
+                    bytes.extend(marker.as_bytes());
+                    bytes.extend(::START_MARKER.as_bytes());
                     bytes.extend(other_chunk);
+                    bytes.extend(::END_MARKER.as_bytes());
+                    bytes.extend(marker.as_bytes());
                     bytes.extend(::END_MARKER.as_bytes());
                 } else if old_chunk != new_chunk && old_chunk == other_chunk {
                     // Changed only in new
@@ -424,7 +428,7 @@ mod tests {
 
     #[test]
     fn test_try_merge_empty() {
-        assert_eq!("".to_string(), try_merge("", "", ""));
+        assert_eq!("".to_string(), try_merge("", "", "", ""));
     }
 
     #[test]
@@ -432,9 +436,9 @@ mod tests {
         let old = "First sentence. Second sentence.";
         let new = "First sentence. Second sentence changed.";
         let other = "First sentence changed. Second sentence.";
-        let expected = format!("First {}sentence changed. {}Second sentence changed.",
-                               ::START_MARKER, ::END_MARKER);
-        assert_eq!(expected, try_merge(old, new, other));
+        let expected = format!("First {}test{}sentence changed. {}test{}Second sentence changed.",
+                               ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        assert_eq!(expected, try_merge(old, new, other, "test"));
     }
 
     #[test]
@@ -442,7 +446,7 @@ mod tests {
         let old = "First sentence. Second sentence.";
         let new = "First sentence. Second sentence changed one way.";
         let other = "First sentence changed. Second sentence changed a different way.";
-        assert_eq!(new, try_merge(old, new, other));
+        assert_eq!(new, try_merge(old, new, other, "test"));
     }
 
     #[test]
@@ -450,8 +454,9 @@ mod tests {
         let old = "Test string. ";
         let new = "Test 1 string. ";
         let other = "Test string. 2";
-        let expected = format!("Test 1 string. {}2{}", ::START_MARKER, ::END_MARKER);
-        assert_eq!(expected, try_merge(old, new, other));
+        let expected = format!("Test 1 string. {}test{}2{}test{}",
+                               ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        assert_eq!(expected, try_merge(old, new, other, "test"));
     }
 
     #[test]
@@ -460,8 +465,9 @@ mod tests {
         let new = "First sentence. Second sentence 𐅃.";
         let other = "First sentence さようなら. Second sentence.";
         let expected = format!(
-            "First {}sentence さようなら. {}Second sentence 𐅃.", ::START_MARKER, ::END_MARKER);
-        assert_eq!(expected, try_merge(old, new, other));
+            "First {}test{}sentence さようなら. {}test{}Second sentence 𐅃.",
+            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        assert_eq!(expected, try_merge(old, new, other, "test"));
     }
 
     #[test]
