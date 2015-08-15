@@ -33,8 +33,8 @@ use wiki::Wiki;
 /// Page:replace_body_and_remove_merge_markers() processes the merge markers in the rendered
 /// wikitext and puts the header and footer around it.
 pub struct Page {
-    html_body_sender: Sender<String>,
-    replaced_body_receiver: Receiver<Result<String, String>>,
+    placeholder: String,
+    page_skeleton_receiver: Receiver<Result<String, String>>,
 }
 
 impl Page {
@@ -44,71 +44,55 @@ impl Page {
     /// stays off the critical path for page load.
     pub fn new(title: &str, wiki: Wiki) -> Page {
         let placeholder = format!("WMW_PLACEHOLDER_{}", rand::random::<u64>());
-        let current_content_receiver =
-            Page::spawn_content_fetch_thread(title, placeholder.clone(), wiki);
-        let (html_body_sender, replaced_body_receiver) =
-            Page::spawn_replace_body_thread(current_content_receiver, placeholder);
+        let page_skeleton_receiver =
+            Page::spawn_page_skeleton_fetch_thread(title, placeholder.clone(), wiki);
         Page {
-            html_body_sender: html_body_sender,
-            replaced_body_receiver: replaced_body_receiver,
+            placeholder: placeholder,
+            page_skeleton_receiver: page_skeleton_receiver,
         }
     }
 
-    // TODO: Why is this done in a separate thread at all? That's unnecessary. Just do the
-    // processing on this thread.
     /// This finishes the HTML processing - it replaces the merge markers in `html_body` with HTML
     /// tags, and inserts the resulting HTML into the page skeleton.
     pub fn replace_body_and_remove_merge_markers(&self, html_body: String)
                                                  -> Result<String, String> {
-        self.html_body_sender.send(html_body);
-        try_display!(self.replaced_body_receiver.recv(), "Failed to get data from channel")
+        match self.page_skeleton_receiver.recv() {
+            Ok(Ok(page_skeleton)) => {
+                // TODO: This should remove the merge markers first, and replace the page
+                // contents second. There are never merge markers in the page skeleton, so it's
+                // useless to look for merge markers there.
+                let html_with_merge_markers =
+                    remove_merge_markers_from_html(
+                        page_skeleton.replace(&self.placeholder, &html_body));
+                // TODO: Move this elsewhere, use constants, etc.
+                let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
+                let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
+                let finished_html =
+                    start_regex.replace_all(
+                        &end_regex.replace_all(&html_with_merge_markers, "</span>"),
+                        |captures: &Captures|
+                        format!("<span style=\"color: red\" class=\"vandalism-{}\">",
+                                captures.at(1).unwrap()));
+                Ok(finished_html)
+            },
+            Ok(Err(msg))=> Err(msg),
+            Err(err) => Err(format!("error: {}", err)),
+        }
     }
 
-    fn spawn_content_fetch_thread(title: &str, placeholder: String, wiki: Wiki)
+    fn spawn_page_skeleton_fetch_thread(title: &str, placeholder: String, wiki: Wiki)
                                   -> Receiver<Result<String, String>> {
-        let (sender, receiver) = channel::<Result<String, String>>();
+        let (page_skeleton_sender, page_skeleton_receiver) = channel::<Result<String, String>>();
         let title = title.to_owned().clone();
         thread::spawn(move|| {
-            sender.send(
+            page_skeleton_sender.send(
                 match wiki.get_current_page_content(&title) {
                     Ok(content) =>
                         replace_node_with_placeholder(&content, "mw-content-text", &placeholder),
-                Err(msg) => Err(msg),
-            }).unwrap();
+                    Err(msg) => Err(msg),
+                }).unwrap();
         });
-        receiver
-    }
-
-    fn spawn_replace_body_thread(
-        page_skeleton_receiver: Receiver<Result<String, String>>, placeholder: String)
-        -> (Sender<String>, Receiver<Result<String, String>>) {
-        let (html_body_sender, html_body_receiver) = channel::<String>();
-        let (replaced_body_sender, replaced_body_receiver) = channel::<Result<String, String>>();
-        thread::spawn(move|| {
-            match (page_skeleton_receiver.recv(), html_body_receiver.recv()) {
-                (Ok(Ok(page_skeleton)), Ok(body)) => {
-                    // TODO: This should remove the merge markers first, and replace the page
-                    // contents second. There are never merge markers in the page skeleton, so it's
-                    // useless to look for merge markers there.
-                    let html_with_merge_markers =
-                        remove_merge_markers_from_html(page_skeleton.replace(&placeholder, &body));
-                    // TODO: Move this elsewhere, use constants, etc.
-                    let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
-                    let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
-                    let finished_html =
-                        start_regex.replace_all(
-                            &end_regex.replace_all(&html_with_merge_markers, "</span>"),
-                            |captures: &Captures|
-                            format!("<span style=\"color: red\" class=\"vandalism-{}\">",
-                                    captures.at(1).unwrap()));
-                    replaced_body_sender.send(Ok(finished_html))
-                },
-                (Ok(Err(msg)), _) => replaced_body_sender.send(Err(msg)),
-                (Err(err), _) => replaced_body_sender.send(Err(format!("error: {}", err))),
-                (_, Err(err)) => replaced_body_sender.send(Err(format!("error: {}", err))),
-            }.unwrap()
-        });
-        (html_body_sender, replaced_body_receiver)
+        page_skeleton_receiver
     }
 }
 
