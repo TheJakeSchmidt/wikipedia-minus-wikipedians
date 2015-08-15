@@ -1,3 +1,5 @@
+//! Contains all HTML-related code. See the `Page` documentation for details.
+
 // TODO: Why do I need these two lines "extern crate html5ever" and "extern crate
 // html5ever_dom_sink" both here and in main.rs?
 extern crate html5ever;
@@ -19,14 +21,27 @@ use regex::Captures;
 use wiki::Wiki;
 
 // TODO: massive cleanup, all over this file.
+// TODO: I'm using "body" and even "html_body" to mean "article body" in this file and main.rs,
+// which isn't right. Come up with a better name for that and use it everywhere.
 
-// TODO: doc comments everywhere!
+/// Represents, and owns all behavior related to, the contents of the HTML page shown to the
+/// user. This includes fetching the rendered article from Wikipedia, replacing its contents with
+/// the rendered wikitext, and processing/removing merge markers.
+///
+/// The API to this struct comprises two methods: Page::new() constructs a new Page. It should be
+/// called early, so the Page can start fetching article HTML from Wikipedia.
+/// Page:replace_body_and_remove_merge_markers() processes the merge markers in the rendered
+/// wikitext and puts the header and footer around it.
 pub struct Page {
     html_body_sender: Sender<String>,
     replaced_body_receiver: Receiver<Result<String, String>>,
 }
 
 impl Page {
+    /// Creates a new Page representing the article at `title`. This kicks off a background thread
+    /// that fetches the current article HTML from Wikipedia. Because of that, it should be called
+    /// as early as possible (as soon as the title being served is known), so that the page fetch
+    /// stays off the critical path for page load.
     pub fn new(title: &str, wiki: Wiki) -> Page {
         let placeholder = format!("WMW_PLACEHOLDER_{}", rand::random::<u64>());
         let current_content_receiver =
@@ -39,6 +54,10 @@ impl Page {
         }
     }
 
+    // TODO: Why is this done in a separate thread at all? That's unnecessary. Just do the
+    // processing on this thread.
+    /// This finishes the HTML processing - it replaces the merge markers in `html_body` with HTML
+    /// tags, and inserts the resulting HTML into the page skeleton.
     pub fn replace_body_and_remove_merge_markers(&self, html_body: String)
                                                  -> Result<String, String> {
         self.html_body_sender.send(html_body);
@@ -60,7 +79,6 @@ impl Page {
         receiver
     }
 
-    // TODO: doc comment
     fn spawn_replace_body_thread(
         page_skeleton_receiver: Receiver<Result<String, String>>, placeholder: String)
         -> (Sender<String>, Receiver<Result<String, String>>) {
@@ -69,6 +87,9 @@ impl Page {
         thread::spawn(move|| {
             match (page_skeleton_receiver.recv(), html_body_receiver.recv()) {
                 (Ok(Ok(page_skeleton)), Ok(body)) => {
+                    // TODO: This should remove the merge markers first, and replace the page
+                    // contents second. There are never merge markers in the page skeleton, so it's
+                    // useless to look for merge markers there.
                     let html_with_merge_markers =
                         remove_merge_markers_from_html(page_skeleton.replace(&placeholder, &body));
                     // TODO: Move this elsewhere, use constants, etc.
