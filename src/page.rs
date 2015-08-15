@@ -17,8 +17,12 @@ use html5ever_dom_sink::common::NodeEnum;
 use html5ever_dom_sink::rcdom::Handle;
 use html5ever_dom_sink::rcdom::RcDom;
 use regex::Captures;
+use regex::Regex;
 
 use wiki::Wiki;
+
+use ::START_MARKER;
+use ::END_MARKER;
 
 // TODO: massive cleanup, all over this file.
 
@@ -136,28 +140,28 @@ fn process_merge_markers(html: String) -> String {
 }
 
 fn remove_merge_markers(html: String) -> String {
-    // TODO: clean up this whole function. regex[1..4] are not good names.
-    // TODO: use START_MARKER and END_MARKER constants here.
     // Finds markers where the end, but not the start, is inside a tag.
-    let regex1 = regex!(
-        r"\x{E000}[0-9]+\x{E000}([^\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
+    let regex1 = Regex::new(&format!(
+        r"{}[0-9]+{}([^{}]*?)<([^>]*?){}[0-9]+{}([^>]*?)>",
+        START_MARKER, START_MARKER, END_MARKER, END_MARKER, END_MARKER)).unwrap();
     // Finds markers where the start, but not the end, is inside a tag.
-    let regex2 = regex!(
-        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}]*?)\x{E000}[0-9]+\x{E000}");
+    let regex2 = Regex::new(&format!(
+        r"<([^>]*?){}[0-9]+{}([^>]*?)>([^{}]*?){}[0-9]+{}",
+        START_MARKER, START_MARKER, END_MARKER, END_MARKER, END_MARKER)).unwrap();
     // Finds markers where both the start and end are inside tags.
-    let regex3 = regex!(
-        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
-
-    let html1 = regex1.replace_all(
+    let regex3 = Regex::new(&format!(
+        r"<([^>]*?){}[0-9]+{}([^>]*?)>([^{}{}]*?)<([^>]*?){}[0-9]+{}([^>]*?)>",
+        START_MARKER, START_MARKER, START_MARKER, END_MARKER, END_MARKER, END_MARKER)).unwrap();
+    let html = regex1.replace_all(
         &html, |captures: &Captures|
         format!("{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
                 captures.at(3).unwrap()));
-    let html2 = regex2.replace_all(
-        &html1, |captures: &Captures|
-        format!("<{}{}>{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
+    let html = regex2.replace_all(
+        &html, |captures: &Captures|
+        format!("<{}{}>{}", captures.at(1).unwrap(), captures.at(2).unwrap(),
                 captures.at(3).unwrap()));
     regex3.replace_all(
-        &html2, |captures: &Captures|
+        &html, |captures: &Captures|
         format!("<{}{}>{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
                 captures.at(3).unwrap(), captures.at(4).unwrap(), captures.at(5).unwrap()))
 }
@@ -165,14 +169,6 @@ fn remove_merge_markers(html: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::{remove_merge_markers, replace_node_with_placeholder};
-
-    #[test]
-    fn test_remove_merge_markers_from_html() {
-        let html = format!("<html><body>{}123{}<img src=\"asdf{}123{}.jpg\"></body></html>",
-                           ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
-        let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
-        assert_eq!(expected, remove_merge_markers(html));
-    }
 
     #[test]
     fn test_remove_merge_markers_from_html_keep() {
@@ -190,6 +186,30 @@ mod tests {
         let expected = format!(
             "<html><body>{}234{}<b>text{}234{}</b><img src=\"asdf.jpg\"></body></html>",
             ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        assert_eq!(expected, remove_merge_markers(html));
+    }
+
+    #[test]
+    fn test_remove_merge_markers_from_html_end_inside_tag() {
+        let html = format!("<html><body>{}123{}<img src=\"asdf{}123{}.jpg\"></body></html>",
+                           ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
+        assert_eq!(expected, remove_merge_markers(html));
+    }
+
+    #[test]
+    fn test_remove_merge_markers_from_html_start_inside_tag() {
+        let html = format!("<html><body><img src=\"asdf{}123{}.jpg\">{}123{}</body></html>",
+                           ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
+        assert_eq!(expected, remove_merge_markers(html));
+    }
+
+    #[test]
+    fn test_remove_merge_markers_from_html_both_inside_tag() {
+        let html = format!("<html><body><img src=\"asdf{}123{}.jpg\">text<b{}123{}></body></html>",
+                           ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        let expected = "<html><body><img src=\"asdf.jpg\">text<b></body></html>";
         assert_eq!(expected, remove_merge_markers(html));
     }
 
