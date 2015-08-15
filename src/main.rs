@@ -53,6 +53,7 @@ macro_rules! try_return {
 mod json;
 mod longest_common_subsequence;
 mod merge;
+mod page;
 mod wiki;
 
 use argparse::ArgumentParser;
@@ -91,6 +92,7 @@ use regex::Captures;
 use regex::Regex;
 use tempfile::NamedTempFile;
 
+use page::Page;
 use wiki::Revision;
 use wiki::Wiki;
 
@@ -154,73 +156,6 @@ fn spawn_threads<I>(sections: I) ->
     (senders_map, receivers_map)
 }
 
-fn replace_node_with_placeholder(original_html: &str, div_id: &str, placeholder: &str)
-    -> Result<String, String> {
-    let html = tendril::StrTendril::from_str(original_html).unwrap();
-    let mut dom: RcDom = html5ever::parse(html5ever::one_input(html), Default::default());
-
-    let handle = try!(find_node_by_id(&dom.get_document(), div_id));
-    let child_handles =
-        (&handle.borrow().children).into_iter().map(|child| child.clone()).collect::<Vec<_>>();
-    for child_handle in child_handles {
-        dom.remove_from_parent(child_handle);
-    }
-    dom.append(handle,
-               html5ever::tree_builder::interface::NodeOrText::AppendText(
-                   tendril::StrTendril::from_str(placeholder).unwrap()));
-    let mut serialized: Vec<u8> = vec![];
-    try_display!(
-        html5ever::serialize::serialize(&mut serialized, &dom.document, Default::default()),
-        "Failed to serialize modified HTML");
-    Ok(try_display!(String::from_utf8(serialized),
-                    "Error converting serialized HTML to UTF-8 string"))
-}
-
-fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
-    fn has_matching_id(attributes: &Vec<Attribute>, id: &str) -> bool {
-        return attributes.into_iter().any(
-            |attribute| attribute.name.local.as_slice() == "id" &&
-                format!("{}", attribute.value) == id);
-    }
-
-    let node = handle.borrow();
-    match node.node {
-        NodeEnum::Element(_, ref attributes) if has_matching_id(attributes, id) => Ok(handle.clone()),
-        _ => (&node.children).into_iter()
-            .map(|child| find_node_by_id(child, id))
-            .filter(|result| result.is_ok())
-            .map(|result| result.unwrap())
-            .next().ok_or(format!("No node with ID {} found", id)),
-    }
-}
-
-fn remove_merge_markers_from_html(html: String) -> String {
-    // TODO: clean up this whole function. regex[1..4] are not good names.
-    // TODO: use START_MARKER and END_MARKER constants here.
-    // Finds markers where the end, but not the start, is inside a tag.
-    let regex1 = regex!(
-        r"\x{E000}[0-9]+\x{E000}([^\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
-    // Finds markers where the start, but not the end, is inside a tag.
-    let regex2 = regex!(
-        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}]*?)\x{E000}[0-9]+\x{E000}");
-    // Finds markers where both the start and end are inside tags.
-    let regex3 = regex!(
-        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
-
-    let html1 = regex1.replace_all(
-        &html, |captures: &Captures|
-        format!("{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
-                captures.at(3).unwrap()));
-    let html2 = regex2.replace_all(
-        &html1, |captures: &Captures|
-        format!("<{}{}>{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
-                captures.at(3).unwrap()));
-    regex3.replace_all(
-        &html2, |captures: &Captures|
-        format!("<{}{}>{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
-                captures.at(3).unwrap(), captures.at(4).unwrap(), captures.at(5).unwrap()))
-}
-
 struct WikipediaMinusWikipediansHandler {
     wiki: Wiki,
     client: Client
@@ -235,24 +170,6 @@ impl WikipediaMinusWikipediansHandler {
     fn get_antivandalism_revisions(&self, title: &str) -> Result<Vec<Revision>, String> {
         let revisions = try!(self.wiki.get_revisions(title, 500));
         Ok(revisions.into_iter().filter(|revision| revision.comment.contains("vandal")).collect())
-    }
-
-    fn get_current_page_content(&self, title: &str, placeholder: &str) ->
-        Receiver<Result<String, String>> {
-        let (sender, receiver) = channel();
-        let wiki = self.wiki.clone();
-        let title = title.to_string().clone();
-        let placeholder = placeholder.to_string().clone();
-        thread::spawn(move|| {
-            match wiki.get_current_page_content(&title) {
-                Ok(content) => {
-                    sender.send(
-                        replace_node_with_placeholder(&content, "mw-content-text", &placeholder));
-                },
-                Err(msg) => { sender.send(Err(msg)); }
-            }
-        });
-        receiver
     }
 
     /// Fetches each specified revision of the page `title`, parses it into sections, and sends each
@@ -312,8 +229,7 @@ impl WikipediaMinusWikipediansHandler {
     }
 
     fn get_page_with_vandalism_restored(&self, title: &str) -> Result<String, String> {
-        let placeholder = format!("WMW_PLACEHOLDER_TEXT_{}", rand::random::<u64>());
-        let current_page_contents_receiver = self.get_current_page_content(&title, &placeholder);
+        let page = Page::new(title, self.wiki.clone());
 
         // TODO: This almost surely doesn't need to be an Arc.
         let canonical_title = Arc::new(try!(self.wiki.get_canonical_title(title)));
@@ -329,10 +245,8 @@ impl WikipediaMinusWikipediansHandler {
 
         let _timer = Timer::new(format!("Fetched and merged {} revisions of \"{}\"",
                                         (&antivandalism_revisions).len(), title));
-
         try!(self.fetch_revisions_content(
             (*canonical_title).clone(), antivandalism_revisions, senders));
-
         // TODO: get this working, instead of the for loop below
         //let merged_content =
         //    latest_revision_sections.into_iter().map(
@@ -343,24 +257,13 @@ impl WikipediaMinusWikipediansHandler {
             let received_value = receivers.get(&section_title).unwrap().recv().unwrap();
             merged_content.push_str(&received_value);
         }
-
         drop(_timer);
 
-        let raw_html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
-        let _marker_timer = Timer::new("Replaced merge markers in HTML".to_string());
-        let partially_finished_html_body = remove_merge_markers_from_html(raw_html_body);
-        // TODO: Move this elsewhere, use constants, etc.
-        let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
-        let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
-        let finished_html_body =
-            start_regex.replace_all(
-                &end_regex.replace_all(&partially_finished_html_body, "</span>"),
-                |captures: &Captures|
-                format!("<span style=\"color: red\" class=\"vandalism-{}\">", captures.at(1).unwrap()));
-        drop(_marker_timer);
-        let page_contents_with_placeholder = try!(current_page_contents_receiver.recv().unwrap());
+        let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
 
-        Ok(page_contents_with_placeholder.replace(&placeholder, &finished_html_body))
+        let _marker_timer = Timer::new("Mangled HTML".to_string());
+        let html_receiver = page.replace_body_and_remove_merge_markers(html_body);
+        try_display!(html_receiver.recv(), "Failed to get data from channel")
     }
 }
 
@@ -471,45 +374,4 @@ fn main() {
             Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new(), redis_connection_info),
             Client::new());
     Iron::new(handler).http(("localhost", port)).unwrap();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{remove_merge_markers_from_html, replace_node_with_placeholder, START_MARKER,
-                END_MARKER};
-
-    #[test]
-    fn test_remove_merge_markers_from_html() {
-        let html = format!("<html><body>{}123{}<img src=\"asdf{}123{}.jpg\"></body></html>",
-                           START_MARKER, START_MARKER, END_MARKER, END_MARKER);
-        let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
-        assert_eq!(expected, remove_merge_markers_from_html(html));
-    }
-
-    #[test]
-    fn test_remove_merge_markers_from_html_keep() {
-        let html = format!("<html><body>{}456{}<img src=\"asdf.jpg\">{}456{}</body></html>",
-                           START_MARKER, START_MARKER, END_MARKER, END_MARKER);
-        assert_eq!(html.clone(), remove_merge_markers_from_html(html));
-    }
-
-    #[test]
-    fn test_remove_merge_markers_from_html_keep_one_remove_one() {
-        let html = format!(
-            "<html><body>{}234{}<b>text{}234{}</b>{}567{}<img src=\"asdf{}567{}.jpg\"></body></html>",
-            START_MARKER, START_MARKER, END_MARKER, END_MARKER, START_MARKER, START_MARKER,
-            END_MARKER, END_MARKER);
-        let expected = format!(
-            "<html><body>{}234{}<b>text{}234{}</b><img src=\"asdf.jpg\"></body></html>",
-            START_MARKER, START_MARKER, END_MARKER, END_MARKER);
-        assert_eq!(expected, remove_merge_markers_from_html(html));
-    }
-
-    #[test]
-    fn test_replace_html_content() {
-        let original_html = "<html><head></head><body><div id=\"content\"><div id=\"bodyContent\"><div id=\"mw-content-text\"><p>original text</p></div><div>Other text</div></div></div></body></html>";
-        let expected_html = "<html><head></head><body><div id=\"content\"><div id=\"bodyContent\"><div id=\"mw-content-text\">replaced text</div><div>Other text</div></div></div></body></html>";
-        let processed_html = replace_node_with_placeholder(original_html, "mw-content-text", "replaced text").unwrap();
-        assert_eq!(expected_html, processed_html);
-    }
 }
