@@ -248,10 +248,10 @@ impl WikipediaMinusWikipediansHandler {
         }
         drop(_timer);
 
-        let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
+        let article_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
 
         let _marker_timer = Timer::new("Mangled HTML".to_string());
-        page.replace_body_and_remove_merge_markers(html_body)
+        page.replace_body_and_remove_merge_markers(article_body)
     }
 }
 

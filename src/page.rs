@@ -21,8 +21,6 @@ use regex::Captures;
 use wiki::Wiki;
 
 // TODO: massive cleanup, all over this file.
-// TODO: I'm using "body" and even "html_body" to mean "article body" in this file and main.rs,
-// which isn't right. Come up with a better name for that and use it everywhere.
 
 /// Represents, and owns all behavior related to, the contents of the HTML page shown to the
 /// user. This includes fetching the rendered article from Wikipedia, replacing its contents with
@@ -54,9 +52,9 @@ impl Page {
         }
     }
 
-    /// This finishes the HTML processing - it replaces the merge markers in `html_body` with HTML
-    /// tags, and inserts the resulting HTML into the page skeleton.
-    pub fn replace_body_and_remove_merge_markers(&self, html_body: String)
+    /// This finishes the HTML processing - it replaces the merge markers in `article_body` with
+    /// HTML tags, and inserts the resulting HTML into the page skeleton.
+    pub fn replace_body_and_remove_merge_markers(&self, article_body: String)
                                                  -> Result<String, String> {
         match self.page_skeleton_receiver.recv() {
             Ok(Ok(page_skeleton)) => {
@@ -65,7 +63,7 @@ impl Page {
                 // useless to look for merge markers there.
                 let html_with_merge_markers =
                     remove_merge_markers_from_html(
-                        page_skeleton.replace(&self.placeholder, &html_body));
+                        page_skeleton.replace(&self.placeholder, &article_body));
                 // TODO: Move this elsewhere, use constants, etc.
                 let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
                 let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
