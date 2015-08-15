@@ -171,14 +171,14 @@ mod tests {
     use super::{remove_merge_markers, replace_node_with_placeholder};
 
     #[test]
-    fn test_remove_merge_markers_from_html_keep() {
+    fn test_remove_merge_markers_keep() {
         let html = format!("<html><body>{}456{}<img src=\"asdf.jpg\">{}456{}</body></html>",
                            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
         assert_eq!(html.clone(), remove_merge_markers(html));
     }
 
     #[test]
-    fn test_remove_merge_markers_from_html_keep_one_remove_one() {
+    fn test_remove_merge_markers_keep_one_remove_one() {
         let html = format!(
             "<html><body>{}234{}<b>text{}234{}</b>{}567{}<img src=\"asdf{}567{}.jpg\"></body></html>",
             ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER, ::START_MARKER, ::START_MARKER,
@@ -190,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_merge_markers_from_html_end_inside_tag() {
+    fn test_remove_merge_markers_end_inside_tag() {
         let html = format!("<html><body>{}123{}<img src=\"asdf{}123{}.jpg\"></body></html>",
                            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
         let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
@@ -198,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_merge_markers_from_html_start_inside_tag() {
+    fn test_remove_merge_markers_start_inside_tag() {
         let html = format!("<html><body><img src=\"asdf{}123{}.jpg\">{}123{}</body></html>",
                            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
         let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_merge_markers_from_html_both_inside_tag() {
+    fn test_remove_merge_markers_both_inside_tag() {
         let html = format!("<html><body><img src=\"asdf{}123{}.jpg\">text<b{}123{}></body></html>",
                            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
         let expected = "<html><body><img src=\"asdf.jpg\">text<b></body></html>";
