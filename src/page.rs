@@ -28,8 +28,9 @@ pub struct Page {
 
 impl Page {
     pub fn new(title: &str, wiki: Wiki) -> Page {
-        let current_content_receiver = Page::spawn_content_fetch_thread(title, wiki);
         let placeholder = format!("WMW_PLACEHOLDER_{}", rand::random::<u64>());
+        let current_content_receiver =
+            Page::spawn_content_fetch_thread(title, placeholder.clone(), wiki);
         let (html_body_sender, replaced_body_receiver) =
             Page::spawn_replace_body_thread(current_content_receiver, placeholder);
         Page {
@@ -44,35 +45,38 @@ impl Page {
         try_display!(self.replaced_body_receiver.recv(), "Failed to get data from channel")
     }
 
-    fn spawn_content_fetch_thread(title: &str, wiki: Wiki) -> Receiver<Result<String, String>> {
-        let (sender, receiver) = channel();
+    fn spawn_content_fetch_thread(title: &str, placeholder: String, wiki: Wiki)
+                                  -> Receiver<Result<String, String>> {
+        let (sender, receiver) = channel::<Result<String, String>>();
         let title = title.to_owned().clone();
-        thread::spawn(move|| sender.send(wiki.get_current_page_content(&title)));
+        thread::spawn(move|| {
+            sender.send(
+                match wiki.get_current_page_content(&title) {
+                    Ok(content) =>
+                        replace_node_with_placeholder(&content, "mw-content-text", &placeholder),
+                Err(msg) => Err(msg),
+            }).unwrap();
+        });
         receiver
     }
 
     // TODO: doc comment
     fn spawn_replace_body_thread(
-        current_content_receiver: Receiver<Result<String, String>>, placeholder: String)
+        page_skeleton_receiver: Receiver<Result<String, String>>, placeholder: String)
         -> (Sender<String>, Receiver<Result<String, String>>) {
         let (html_body_sender, html_body_receiver) = channel::<String>();
         let (replaced_body_sender, replaced_body_receiver) = channel::<Result<String, String>>();
         thread::spawn(move|| {
-            match (current_content_receiver.recv(), html_body_receiver.recv()) {
-                (Ok(Ok(content)), Ok(body)) => {
-                    // TODO: doing the replace_node_with_placeholder here means it has to wait for the body to be prepared. Fix that.
-                    // TODO: get rid of the unwrap()
-                    let placeholder_html =
-                        replace_node_with_placeholder(&content, "mw-content-text", &placeholder)
-                        .unwrap();
-                    let replaced_body_html = placeholder_html.replace(&placeholder, &body);
-                    let replaced_body_html = remove_merge_markers_from_html(replaced_body_html);
+            match (page_skeleton_receiver.recv(), html_body_receiver.recv()) {
+                (Ok(Ok(page_skeleton)), Ok(body)) => {
+                    let html_with_merge_markers =
+                        remove_merge_markers_from_html(page_skeleton.replace(&placeholder, &body));
                     // TODO: Move this elsewhere, use constants, etc.
                     let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
                     let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
                     let finished_html =
                         start_regex.replace_all(
-                            &end_regex.replace_all(&replaced_body_html, "</span>"),
+                            &end_regex.replace_all(&html_with_merge_markers, "</span>"),
                             |captures: &Captures|
                             format!("<span style=\"color: red\" class=\"vandalism-{}\">",
                                     captures.at(1).unwrap()));
