@@ -2,6 +2,8 @@
 #![plugin(regex_macros)]
 
 extern crate argparse;
+extern crate html5ever;
+extern crate html5ever_dom_sink;
 extern crate hyper;
 extern crate iron;
 #[macro_use]

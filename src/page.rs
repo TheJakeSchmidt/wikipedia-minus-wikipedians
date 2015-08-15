@@ -58,22 +58,8 @@ impl Page {
                                                  -> Result<String, String> {
         match self.page_skeleton_receiver.recv() {
             Ok(Ok(page_skeleton)) => {
-                // TODO: This should remove the merge markers first, and replace the page
-                // contents second. There are never merge markers in the page skeleton, so it's
-                // useless to look for merge markers there.
-                let html_with_merge_markers =
-                    remove_merge_markers_from_html(
-                        page_skeleton.replace(&self.placeholder, &article_body));
-                // TODO: Move this elsewhere, use constants, etc.
-                let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
-                let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
-                let finished_html =
-                    start_regex.replace_all(
-                        &end_regex.replace_all(&html_with_merge_markers, "</span>"),
-                        |captures: &Captures|
-                        format!("<span style=\"color: red\" class=\"vandalism-{}\">",
-                                captures.at(1).unwrap()));
-                Ok(finished_html)
+                let finished_article_body = process_merge_markers(article_body);
+                Ok(page_skeleton.replace(&self.placeholder, &finished_article_body))
             },
             Ok(Err(msg))=> Err(msg),
             Err(err) => Err(format!("error: {}", err)),
@@ -136,7 +122,20 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
     }
 }
 
-fn remove_merge_markers_from_html(html: String) -> String {
+/// Removes merge markers that are inside HTML tags, and replaces the others with <span> tags.
+fn process_merge_markers(html: String) -> String {
+    // TODO: Use the constants
+    let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
+    let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
+
+    let html = remove_merge_markers(html);
+    let html = start_regex.replace_all(
+        &html, |captures: &Captures| format!("<span style=\"color: red\" class=\"vandalism-{}\">",
+                                             captures.at(1).unwrap()));
+    end_regex.replace_all(&html, "</span>")
+}
+
+fn remove_merge_markers(html: String) -> String {
     // TODO: clean up this whole function. regex[1..4] are not good names.
     // TODO: use START_MARKER and END_MARKER constants here.
     // Finds markers where the end, but not the start, is inside a tag.
@@ -165,21 +164,21 @@ fn remove_merge_markers_from_html(html: String) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{remove_merge_markers_from_html, replace_node_with_placeholder};
+    use super::{remove_merge_markers, replace_node_with_placeholder};
 
     #[test]
     fn test_remove_merge_markers_from_html() {
         let html = format!("<html><body>{}123{}<img src=\"asdf{}123{}.jpg\"></body></html>",
                            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
         let expected = "<html><body><img src=\"asdf.jpg\"></body></html>";
-        assert_eq!(expected, remove_merge_markers_from_html(html));
+        assert_eq!(expected, remove_merge_markers(html));
     }
 
     #[test]
     fn test_remove_merge_markers_from_html_keep() {
         let html = format!("<html><body>{}456{}<img src=\"asdf.jpg\">{}456{}</body></html>",
                            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
-        assert_eq!(html.clone(), remove_merge_markers_from_html(html));
+        assert_eq!(html.clone(), remove_merge_markers(html));
     }
 
     #[test]
@@ -191,7 +190,7 @@ mod tests {
         let expected = format!(
             "<html><body>{}234{}<b>text{}234{}</b><img src=\"asdf.jpg\"></body></html>",
             ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
-        assert_eq!(expected, remove_merge_markers_from_html(html));
+        assert_eq!(expected, remove_merge_markers(html));
     }
 
     #[test]
