@@ -24,8 +24,6 @@ use wiki::Wiki;
 use ::START_MARKER;
 use ::END_MARKER;
 
-// TODO: massive cleanup, all over this file.
-
 /// Represents, and owns all behavior related to, the contents of the HTML page shown to the
 /// user. This includes fetching the rendered article from Wikipedia, replacing its contents with
 /// the rendered wikitext, and processing/removing merge markers.
