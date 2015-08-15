@@ -13,7 +13,6 @@ extern crate redis;
 extern crate regex;
 extern crate rustc_serialize;
 extern crate tempfile;
-extern crate time;
 extern crate url;
 
 use argparse::ArgumentParser;
@@ -44,6 +43,7 @@ use iron::mime::TopLevel;
 use tempfile::NamedTempFile;
 
 use page::Page;
+use timer::Timer;
 use wiki::Revision;
 use wiki::Wiki;
 
@@ -85,32 +85,11 @@ mod json;
 mod longest_common_subsequence;
 mod merge;
 mod page;
+mod timer;
 mod wiki;
 
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
-
-/// A struct that uses RAII to log durations: when dropped, it logs the number of milliseconds it
-/// existed, prefixed by `name`.
-struct Timer {
-    name: String,
-    start_time_ns: u64
-}
-
-impl Timer {
-    fn new(name: String) -> Timer {
-        Timer {
-            name: name,
-            start_time_ns: time::precise_time_ns(),
-        }
-    }
-}
-
-impl Drop for Timer {
-    fn drop(&mut self) {
-        info!("{}: {} ms", self.name, (time::precise_time_ns() - self.start_time_ns) / 1_000_000);
-    }
-}
 
 fn spawn_threads<I>(sections: I) ->
     (HashMap<String, Sender<Option<(String, String, u64)>>>, HashMap<String, Receiver<String>>)
