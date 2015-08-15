@@ -2,8 +2,6 @@
 #![plugin(regex_macros)]
 
 extern crate argparse;
-extern crate html5ever;
-extern crate html5ever_dom_sink;
 extern crate hyper;
 extern crate iron;
 #[macro_use]
@@ -65,9 +63,7 @@ use std::process::Command;
 use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::mpsc::channel;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 
 use hyper::Client;
