@@ -1,23 +1,38 @@
-use std::sync::mpsc::Sender;
+extern crate html5ever;
+extern crate html5ever_dom_sink;
+extern crate rand;
+extern crate tendril;
+
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::thread;
+
+use html5ever::Attribute;
+use html5ever::tree_builder::interface::TreeSink;
+use html5ever_dom_sink::common::NodeEnum;
+use html5ever_dom_sink::rcdom::Handle;
+use html5ever_dom_sink::rcdom::RcDom;
+use regex::Captures;
+use regex::Regex;
+
+use wiki::Wiki;
 
 // TODO: massive cleanup, all over this file.
 
 // TODO: doc comments everywhere!
 pub struct Page {
     title: String,
-    placeholder: String,
     html_body_sender: Sender<String>,
     replaced_body_receiver: Receiver<Result<String, String>>,
 }
 
 impl Page {
     pub fn new(title: &str, wiki: Wiki) -> Page {
-        let current_content_receiver = start_content_fetch(title, wiki);
+        let current_content_receiver = Page::spawn_content_fetch_thread(title, wiki);
+        let placeholder = format!("WMW_PLACEHOLDER_{}", rand::random::<u64>());
         let (html_body_sender, replaced_body_receiver) =
-            spawn_replace_body_thread(current_content_receiver);
+            Page::spawn_replace_body_thread(current_content_receiver, &placeholder);
         Page {
             title: title.to_owned(),
-            placeholder: format!("WMW_PLACEHOLDER_{}", rand::random::<u64>()),
             html_body_sender: html_body_sender,
             replaced_body_receiver: replaced_body_receiver,
         }
@@ -33,36 +48,39 @@ impl Page {
         let (sender, receiver) = channel();
         //let wiki = self.wiki.clone();
         let title = title.to_owned().clone();
-        let placeholder = self.placeholder.clone();
         thread::spawn(move|| sender.send(wiki.get_current_page_content(&title)));
         receiver
     }
 
     // TODO: doc comment
-    fn spawn_replace_body_thread(current_content_receiver: Receiver<Result<String, String>>)
-                                 -> (Sender<String>, Receiver<Result<String, String>>) {
+    fn spawn_replace_body_thread(
+        current_content_receiver: Receiver<Result<String, String>>, placeholder: &str)
+        -> (Sender<String>, Receiver<Result<String, String>>) {
         let (html_body_sender, html_body_receiver) = channel();
         let (replaced_body_sender, replaced_body_receiver) = channel();
         thread::spawn(move|| {
             match (current_content_receiver.recv(), html_body_receiver.recv()) {
-                (Ok(content), Ok(body)) => {
+                (Ok(Ok(content)), Ok(Ok(body))) => {
+                    // TODO: get rid of the unwrap()
                     let placeholder_html =
-                        replace_node_with_placeholder(&content, "mw-content-text", &placeholder);
-                    let replaced_body_html = placeholder_html.replace(self.placeholder, body);
-                    let replaced_body_html2 = remove_merge_markers_from_html(replaced_body_html);
+                        replace_node_with_placeholder(&content, "mw-content-text", &placeholder).unwrap();
+                    let replaced_body_html = placeholder_html.replace(placeholder, body);
+                    let replaced_body_html = remove_merge_markers_from_html(replaced_body_html);
                     // TODO: Move this elsewhere, use constants, etc.
                     let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
                     let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
                     let finished_html =
                         start_regex.replace_all(
-                            &end_regex.replace_all(&partially_finished_html_body, "</span>"),
+                            &end_regex.replace_all(&replaced_body_html, "</span>"),
                             |captures: &Captures|
                             format!("<span style=\"color: red\" class=\"vandalism-{}\">",
                                     captures.at(1).unwrap()));
-                    replaced_body_sender.send(finished_html)
+                    replaced_body_sender.send(Ok(finished_html))
                 },
-                (Err(msg), _) => replaced_body_sender.send(Err(msg)),
-                (_, Err(msg)) => replaced_body_sender.send(Err(msg)),
+                (Ok(Err(msg)), _) => replaced_body_sender.send(Err(msg)),
+                (_, Ok(Err(msg))) => replaced_body_sender.send(Err(msg)),
+                (Err(err), _) => replaced_body_sender.send(Err(format!("error: {:?}", err))),
+                (_, Err(err)) => replaced_body_sender.send(Err(format!("error: {:?}", err))),
             }.unwrap()
         });
         (html_body_sender, replaced_body_receiver)
