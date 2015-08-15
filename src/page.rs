@@ -33,7 +33,9 @@ use wiki::Wiki;
 /// Page:replace_body_and_remove_merge_markers() processes the merge markers in the rendered
 /// wikitext and puts the header and footer around it.
 pub struct Page {
+    /// The string used as a placeholder for the article body in the page skeleton.
     placeholder: String,
+    /// The Receiver that will receive the page skeleton when it's been fetched and processed.
     page_skeleton_receiver: Receiver<Result<String, String>>,
 }
 
@@ -136,6 +138,33 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
     }
 }
 
+fn remove_merge_markers_from_html(html: String) -> String {
+    // TODO: clean up this whole function. regex[1..4] are not good names.
+    // TODO: use START_MARKER and END_MARKER constants here.
+    // Finds markers where the end, but not the start, is inside a tag.
+    let regex1 = regex!(
+        r"\x{E000}[0-9]+\x{E000}([^\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
+    // Finds markers where the start, but not the end, is inside a tag.
+    let regex2 = regex!(
+        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}]*?)\x{E000}[0-9]+\x{E000}");
+    // Finds markers where both the start and end are inside tags.
+    let regex3 = regex!(
+        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
+
+    let html1 = regex1.replace_all(
+        &html, |captures: &Captures|
+        format!("{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
+                captures.at(3).unwrap()));
+    let html2 = regex2.replace_all(
+        &html1, |captures: &Captures|
+        format!("<{}{}>{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
+                captures.at(3).unwrap()));
+    regex3.replace_all(
+        &html2, |captures: &Captures|
+        format!("<{}{}>{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
+                captures.at(3).unwrap(), captures.at(4).unwrap(), captures.at(5).unwrap()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{remove_merge_markers_from_html, replace_node_with_placeholder};
@@ -174,31 +203,4 @@ mod tests {
         let processed_html = replace_node_with_placeholder(original_html, "mw-content-text", "replaced text").unwrap();
         assert_eq!(expected_html, processed_html);
     }
-}
-
-fn remove_merge_markers_from_html(html: String) -> String {
-    // TODO: clean up this whole function. regex[1..4] are not good names.
-    // TODO: use START_MARKER and END_MARKER constants here.
-    // Finds markers where the end, but not the start, is inside a tag.
-    let regex1 = regex!(
-        r"\x{E000}[0-9]+\x{E000}([^\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
-    // Finds markers where the start, but not the end, is inside a tag.
-    let regex2 = regex!(
-        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}]*?)\x{E000}[0-9]+\x{E000}");
-    // Finds markers where both the start and end are inside tags.
-    let regex3 = regex!(
-        r"<([^>]*?)\x{E000}[0-9]+\x{E000}([^>]*?)>([^\x{E000}\x{E001}]*?)<([^>]*?)\x{E001}[0-9]+\x{E001}([^>]*?)>");
-
-    let html1 = regex1.replace_all(
-        &html, |captures: &Captures|
-        format!("{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
-                captures.at(3).unwrap()));
-    let html2 = regex2.replace_all(
-        &html1, |captures: &Captures|
-        format!("<{}{}>{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
-                captures.at(3).unwrap()));
-    regex3.replace_all(
-        &html2, |captures: &Captures|
-        format!("<{}{}>{}<{}{}>", captures.at(1).unwrap(), captures.at(2).unwrap(),
-                captures.at(3).unwrap(), captures.at(4).unwrap(), captures.at(5).unwrap()))
 }

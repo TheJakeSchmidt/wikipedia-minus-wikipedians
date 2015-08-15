@@ -14,6 +14,8 @@ extern crate tempfile;
 extern crate time;
 extern crate url;
 
+// TODO: I'm spawning a lot of threads now. I should be naming them meaningfully.
+
 // To mark areas of the merged text that were merged in from vandalized edits, the code uses
 // placeholder characters at the start and end of each merged region.
 //
