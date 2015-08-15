@@ -16,6 +16,37 @@ extern crate tempfile;
 extern crate time;
 extern crate url;
 
+use argparse::ArgumentParser;
+use argparse::Store;
+use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Read;
+use std::io::Write;
+use std::iter::FromIterator;
+use std::process::Command;
+use std::process::Stdio;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::thread;
+
+use hyper::Client;
+use hyper::header::Connection;
+use iron::Iron;
+use iron::IronResult;
+use iron::Request;
+use iron::Response;
+use iron::headers::ContentType;
+use iron::middleware::Handler;
+use iron::mime::Mime;
+use iron::mime::SubLevel;
+use iron::mime::TopLevel;
+use tempfile::NamedTempFile;
+
+use page::Page;
+use wiki::Revision;
+use wiki::Wiki;
+
 // TODO: I'm spawning a lot of threads now. I should be naming them meaningfully.
 
 // To mark areas of the merged text that were merged in from vandalized edits, the code uses
@@ -55,37 +86,6 @@ mod longest_common_subsequence;
 mod merge;
 mod page;
 mod wiki;
-
-use argparse::ArgumentParser;
-use argparse::Store;
-use std::collections::HashMap;
-use std::fs::OpenOptions;
-use std::io::Read;
-use std::io::Write;
-use std::iter::FromIterator;
-use std::process::Command;
-use std::process::Stdio;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::thread;
-
-use hyper::Client;
-use hyper::header::Connection;
-use iron::Iron;
-use iron::IronResult;
-use iron::Request;
-use iron::Response;
-use iron::headers::ContentType;
-use iron::middleware::Handler;
-use iron::mime::Mime;
-use iron::mime::SubLevel;
-use iron::mime::TopLevel;
-use tempfile::NamedTempFile;
-
-use page::Page;
-use wiki::Revision;
-use wiki::Wiki;
 
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
