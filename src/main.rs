@@ -9,12 +9,10 @@ extern crate iron;
 #[macro_use]
 extern crate log;
 extern crate log4rs;
-extern crate rand;
 extern crate redis;
 extern crate regex;
 extern crate rustc_serialize;
 extern crate tempfile;
-extern crate tendril;
 extern crate time;
 extern crate url;
 
@@ -72,11 +70,6 @@ use std::sync::mpsc::Receiver;
 use std::sync::mpsc::Sender;
 use std::thread;
 
-use html5ever::Attribute;
-use html5ever::tree_builder::interface::TreeSink;
-use html5ever_dom_sink::common::NodeEnum;
-use html5ever_dom_sink::rcdom::Handle;
-use html5ever_dom_sink::rcdom::RcDom;
 use hyper::Client;
 use hyper::header::Connection;
 use iron::Iron;
@@ -88,8 +81,6 @@ use iron::middleware::Handler;
 use iron::mime::Mime;
 use iron::mime::SubLevel;
 use iron::mime::TopLevel;
-use regex::Captures;
-use regex::Regex;
 use tempfile::NamedTempFile;
 
 use page::Page;
@@ -262,8 +253,7 @@ impl WikipediaMinusWikipediansHandler {
         let html_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
 
         let _marker_timer = Timer::new("Mangled HTML".to_string());
-        let html_receiver = page.replace_body_and_remove_merge_markers(html_body);
-        try_display!(html_receiver.recv(), "Failed to get data from channel")
+        page.replace_body_and_remove_merge_markers(html_body)
     }
 }
 
