@@ -128,9 +128,8 @@ fn find_node_by_id(handle: &Handle, id: &str) -> Result<Handle, String> {
 
 /// Removes merge markers that are inside HTML tags, and replaces the others with <span> tags.
 fn process_merge_markers(html: String) -> String {
-    // TODO: Use the constants
-    let start_regex = regex!("\u{E000}([0-9]+)\u{E000}");
-    let end_regex = regex!("\u{E001}[0-9]+\u{E001}");
+    let start_regex = Regex::new(&format!("{}([0-9]+){}", START_MARKER, START_MARKER)).unwrap();
+    let end_regex = Regex::new(&format!("{}[0-9]+{}", END_MARKER, END_MARKER)).unwrap();
 
     let html = remove_merge_markers(html);
     let html = start_regex.replace_all(
@@ -169,6 +168,16 @@ fn remove_merge_markers(html: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::{remove_merge_markers, replace_node_with_placeholder};
+
+    fn test_process_merge_markers() {
+        let html = format!(
+            "<html><body>{}456{}<img src=\"asdf.jpg\">{}456{}<b>{}123{}t</b{}123{}></body></html>",
+            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER,
+            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        let expected_regex =
+            regex!("<html><body><span[^>]*><img src=\"asdf.jpg\"></span></body></html>");
+        assert!(expected_regex.is_match(&html));
+    }
 
     #[test]
     fn test_remove_merge_markers_keep() {
