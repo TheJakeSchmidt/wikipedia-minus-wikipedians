@@ -190,7 +190,7 @@ pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> (String, bo
         old_words.clone(), other_words.clone());
     let (new_lcs, other_lcs) = match (new_lcs, other_lcs) {
         (Some(new_lcs), Some(other_lcs)) => (new_lcs, other_lcs),
-        _ => { return (new.to_owned(), true); },
+        _ => { info!("Timed out computing LCS"); return (new.to_owned(), true); },
     };
 
     let mut bytes = Vec::<u8>::new();
@@ -242,8 +242,14 @@ pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> (String, bo
                     // Truly conflicting
                     // In a normal 3-way merge program, this means a failed merge requiring user
                     // intervention. Since we have no user to intervene and want to keep as much
-                    // vandalism as possible, we keep new_chunk here so we can keep going.
-                    bytes.extend(new_chunk);
+                    // vandalism as possible, we keep other_chunk here and keep going.
+                    bytes.extend(::START_MARKER.as_bytes());
+                    bytes.extend(marker.as_bytes());
+                    bytes.extend(::START_MARKER.as_bytes());
+                    bytes.extend(other_chunk);
+                    bytes.extend(::END_MARKER.as_bytes());
+                    bytes.extend(marker.as_bytes());
+                    bytes.extend(::END_MARKER.as_bytes());
                 }
             },
         }

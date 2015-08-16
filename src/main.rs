@@ -93,6 +93,8 @@ mod wiki;
 
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
+// TODO: add performance-tuning flags: Size at which we skip diffs, number of consecutive timeouts
+// to tolerate, timeout on a single diff.
 
 /// Given a list of (section title, section content) pairs, spawns one thread for each section. Each
 /// thread accepts (clean content, vandalized content, revision ID) tuples for its section over a
