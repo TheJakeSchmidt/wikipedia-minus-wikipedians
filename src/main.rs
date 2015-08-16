@@ -91,7 +91,16 @@ mod wiki;
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
 
-fn spawn_threads<I>(sections: I) ->
+/// Given a list of (section title, section content) pairs, spawns one thread for each section. Each
+/// thread accepts (clean content, vandalized content, revision ID) tuples for its section over a
+/// MPSC channel, in reverse chronological order, and merges each one in to the extent
+/// possible. When a thread receives None over its input channel, it sends the merged content over
+/// its output channel.
+///
+/// The return value is a 2-tuple of HashMaps. The first maps from the section title to the Sender
+/// for that section's thread's input channel, and the second maps from the section title to the
+/// Receiver for that section's thread's output channel.
+fn spawn_merge_threads<I>(sections: I) ->
     (HashMap<String, Sender<Option<(String, String, u64)>>>, HashMap<String, Receiver<String>>)
     where I: IntoIterator<Item=(String, String)> {
     let mut senders_map = HashMap::new();
@@ -129,7 +138,7 @@ fn spawn_threads<I>(sections: I) ->
                         drop(_timer);
                         break;
                     },
-                    Err(..) => panic!("Failed to receive from in_receiver"),
+                    Err(err) => panic!("Failed to receive from in_receiver: {}", err),
                 }
             }
         });
@@ -156,10 +165,12 @@ impl WikipediaMinusWikipediansHandler {
     }
 
     /// Fetches each specified revision of the page `title`, parses it into sections, and sends each
-    /// section's content to the Sender associated with the section's title in `senders`.
+    /// section's content to the Sender associated with the section's title in
+    /// `revision_content_senders`.
     fn fetch_revisions_content(
         &self, title: String, revisions: Vec<Revision>,
-        senders: HashMap<String, Sender<Option<(String, String, u64)>>>) -> Result<(), String> {
+        revision_content_senders: HashMap<String, Sender<Option<(String, String, u64)>>>)
+        -> Result<(), String> {
         let _timer =
             Timer::new(format!("Got content of {} revisions of \"{}\"", revisions.len(), title));
         // Elements are (clean revision ID, receiver for clean revision content, receiver for
@@ -197,17 +208,18 @@ impl WikipediaMinusWikipediansHandler {
                 HashMap::from_iter(try!(
                     try_display!(vandalized_receiver.recv(), "Failed to get data from thread")));
 
-            for (title, sender) in senders.iter() {
+            for (title, revision_content_sender) in revision_content_senders.iter() {
                 match (clean_sections.remove(title), vandalized_sections.remove(title)) {
                     (Some(clean_content), Some(vandalized_content)) => {
-                        sender.send(Some((clean_content, vandalized_content, revision_id)));
+                        revision_content_sender.send(
+                            Some((clean_content, vandalized_content, revision_id)));
                     },
                     _ => (),
                 }
             }
         }
-        for sender in senders.values() {
-            sender.send(None);
+        for revision_content_sender in revision_content_senders.values() {
+            revision_content_sender.send(None);
         }
 
         Ok(())
@@ -225,26 +237,29 @@ impl WikipediaMinusWikipediansHandler {
                 try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid));
         let latest_revision_sections = wiki::parse_sections(&latest_revision_content);
 
-        let (senders, receivers) = spawn_threads(latest_revision_sections.clone());
+        let (revision_content_senders, merged_content_receivers) =
+            spawn_merge_threads(latest_revision_sections.clone());
         let antivandalism_revisions = try!(self.get_antivandalism_revisions(&canonical_title));
 
         let _timer = Timer::new(format!("Fetched and merged {} revisions of \"{}\"",
                                         (&antivandalism_revisions).len(), title));
         try!(self.fetch_revisions_content(
-            (*canonical_title).clone(), antivandalism_revisions, senders));
+            (*canonical_title).clone(), antivandalism_revisions, revision_content_senders));
         // TODO: get this working, instead of the for loop below
-        //let merged_content =
+        //let merged_article =
         //    latest_revision_sections.into_iter().map(
-        //        |section_title, _| channels.get(&section_title).unwrap().1.recv().unwrap())
+        //        |section_title, _|
+        //        merged_content_receivers.get(&section_title).unwrap().1.recv().unwrap())
         //    .join("");
-        let mut merged_content = String::new();
+        let mut merged_article = String::new();
         for (section_title, _) in latest_revision_sections {
-            let received_value = receivers.get(&section_title).unwrap().recv().unwrap();
-            merged_content.push_str(&received_value);
+            let merged_section =
+                merged_content_receivers.get(&section_title).unwrap().recv().unwrap();
+            merged_article.push_str(&merged_section);
         }
         drop(_timer);
 
-        let article_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_content));
+        let article_body = try!(self.wiki.parse_wikitext(&canonical_title, &merged_article));
 
         let _marker_timer = Timer::new("Mangled HTML".to_string());
         page.replace_body_and_remove_merge_markers(article_body)

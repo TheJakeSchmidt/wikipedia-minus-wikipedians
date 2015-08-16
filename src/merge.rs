@@ -184,21 +184,13 @@ pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> (String, bo
         return (new.to_owned(), false);
     }
 
-    let _timer = Timer::new(format!("Found LCS with current content for revision {}", marker));
     let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
         old_words.clone(), new_words.clone());
-    drop(_timer);
-
-    let _timer = Timer::new(format!("Found LCS with vandalized content for revision {}", marker));
     let other_lcs = longest_common_subsequence::get_longest_common_subsequence(
         old_words.clone(), other_words.clone());
-    drop(_timer);
     let (new_lcs, other_lcs) = match (new_lcs, other_lcs) {
         (Some(new_lcs), Some(other_lcs)) => (new_lcs, other_lcs),
-        _ => {
-            info!("Failed to calculate one or both LCSes for revision {}", marker);
-            return (new.to_owned(), true);
-        },
+        _ => { return (new.to_owned(), true); },
     };
 
     let mut bytes = Vec::<u8>::new();
