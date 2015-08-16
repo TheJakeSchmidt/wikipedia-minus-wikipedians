@@ -170,93 +170,108 @@ impl<'a> Iterator for Words<'a> {
     }
 }
 
-/// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
-/// `old`. If the strings do not merge together cleanly, returns `new`. Marks regions merged from
-/// `other` by putting `START_MARKER`, then `marker`, then `START_MARKER` at the beginning, and
-/// `END_MARKER`, `marker`, and `END_MARKER` at the end.
-/// TODO: describe return value
-pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> (String, bool) {
-    let mut old_words = Words::new(old);
-    let mut new_words = Words::new(new);
-    let mut other_words = Words::new(other);
+#[derive(Clone)]
+pub struct Merger {
+    /// The size (in bytes) above which a diff is automatically skipped, without any attempt to
+    /// merge.
+    diff_size_limit: usize,
+}
 
-    // It entirely too long to calculate diffs this large. Our latency budget doesn't cover it.
-    if num::abs(old.len() as i64 - other.len() as i64) > 1000 {
-        info!("Skipped large diff");
-        return (new.to_owned(), false);
+impl Merger {
+    pub fn new(diff_size_limit: usize) -> Merger {
+        Merger { diff_size_limit: diff_size_limit }
     }
 
-    let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
-        old_words.clone(), new_words.clone());
-    let other_lcs = longest_common_subsequence::get_longest_common_subsequence(
-        old_words.clone(), other_words.clone());
-    let (new_lcs, other_lcs) = match (new_lcs, other_lcs) {
-        (Some(new_lcs), Some(other_lcs)) => (new_lcs, other_lcs),
-        _ => { info!("Timed out computing LCS"); return (new.to_owned(), true); },
-    };
+    /// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
+    /// `old`. If the strings do not merge together cleanly, returns `new`. Marks regions merged from
+    /// `other` by putting `START_MARKER`, then `marker`, then `START_MARKER` at the beginning, and
+    /// `END_MARKER`, `marker`, and `END_MARKER` at the end.
+    /// TODO: describe return value
+    pub fn try_merge(&self, old: &str, new: &str, other: &str, marker: &str) -> (String, bool) {
+        let mut old_words = Words::new(old);
+        let mut new_words = Words::new(new);
+        let mut other_words = Words::new(other);
 
-    let mut bytes = Vec::<u8>::new();
-    // TODO: See if these count()s are taking too long (they probably are). If they are, get the
-    // iterator sizes in some other way, piggybacking off the iterator traversals in either this
-    // file or longest_common_subsequence.rs.
-    for chunk in parse(new_lcs, other_lcs, old_words.clone().count(), new_words.clone().count(),
-                       other_words.clone().count()) {
-        match chunk {
-            Chunk::Stable(start, length) => {
-                for _ in 0..length {
-                    bytes.extend(old_words.next().unwrap());
-                    new_words.next().unwrap();
-                    other_words.next().unwrap();
-                }
-            },
-            Chunk::Unstable((old_start, old_length), (new_start, new_length),
-                            (other_start, other_length)) => {
-                let mut old_chunk: Vec<u8> = Vec::new();
-                let mut new_chunk: Vec<u8> = Vec::new();
-                let mut other_chunk: Vec<u8> = Vec::new();
-                for _ in 0..old_length {
-                    old_chunk.extend(old_words.next().unwrap());
-                }
-                for _ in 0..new_length {
-                    new_chunk.extend(new_words.next().unwrap());
-                }
-                for _ in 0..other_length {
-                    other_chunk.extend(other_words.next().unwrap());
-                }
-
-                if old_chunk == new_chunk && old_chunk != other_chunk {
-                    // Changed only in other
-                    bytes.extend(START_MARKER.as_bytes());
-                    bytes.extend(marker.as_bytes());
-                    bytes.extend(START_MARKER.as_bytes());
-                    bytes.extend(other_chunk);
-                    bytes.extend(END_MARKER.as_bytes());
-                    bytes.extend(marker.as_bytes());
-                    bytes.extend(END_MARKER.as_bytes());
-                } else if old_chunk != new_chunk && old_chunk == other_chunk {
-                    // Changed only in new
-                    bytes.extend(new_chunk);
-                } else if old_chunk != new_chunk && new_chunk == other_chunk {
-                    // Falsely conflicting, i.e. changed identically in both new and other
-                    bytes.extend(new_chunk);
-                } else if (old_chunk != new_chunk && old_chunk != other_chunk &&
-                           new_chunk != other_chunk) {
-                    // Truly conflicting
-                    // In a normal 3-way merge program, this means a failed merge requiring user
-                    // intervention. Since we have no user to intervene and want to keep as much
-                    // vandalism as possible, we keep other_chunk here and keep going.
-                    bytes.extend(START_MARKER.as_bytes());
-                    bytes.extend(marker.as_bytes());
-                    bytes.extend(START_MARKER.as_bytes());
-                    bytes.extend(other_chunk);
-                    bytes.extend(END_MARKER.as_bytes());
-                    bytes.extend(marker.as_bytes());
-                    bytes.extend(END_MARKER.as_bytes());
-                }
-            },
+        // It entirely too long to calculate diffs this large. Our latency budget doesn't cover it.
+        if num::abs(old.len() as i64 - other.len() as i64) > self.diff_size_limit as i64 {
+            info!("Skipped large diff");
+            // TODO: I should probably count this as a timeout. Experiment with that and see if it
+            // works.
+            return (new.to_owned(), false);
         }
+
+        let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
+            old_words.clone(), new_words.clone());
+        let other_lcs = longest_common_subsequence::get_longest_common_subsequence(
+            old_words.clone(), other_words.clone());
+        let (new_lcs, other_lcs) = match (new_lcs, other_lcs) {
+            (Some(new_lcs), Some(other_lcs)) => (new_lcs, other_lcs),
+            _ => { info!("Timed out computing LCS"); return (new.to_owned(), true); },
+        };
+
+        let mut bytes = Vec::<u8>::new();
+        // TODO: See if these count()s are taking too long (they probably are). If they are, get the
+        // iterator sizes in some other way, piggybacking off the iterator traversals in either this
+        // file or longest_common_subsequence.rs.
+        for chunk in parse(new_lcs, other_lcs, old_words.clone().count(), new_words.clone().count(),
+                           other_words.clone().count()) {
+            match chunk {
+                Chunk::Stable(start, length) => {
+                    for _ in 0..length {
+                        bytes.extend(old_words.next().unwrap());
+                        new_words.next().unwrap();
+                        other_words.next().unwrap();
+                    }
+                },
+                Chunk::Unstable((old_start, old_length), (new_start, new_length),
+                                (other_start, other_length)) => {
+                    let mut old_chunk: Vec<u8> = Vec::new();
+                    let mut new_chunk: Vec<u8> = Vec::new();
+                    let mut other_chunk: Vec<u8> = Vec::new();
+                    for _ in 0..old_length {
+                        old_chunk.extend(old_words.next().unwrap());
+                    }
+                    for _ in 0..new_length {
+                        new_chunk.extend(new_words.next().unwrap());
+                    }
+                    for _ in 0..other_length {
+                        other_chunk.extend(other_words.next().unwrap());
+                    }
+
+                    if old_chunk == new_chunk && old_chunk != other_chunk {
+                        // Changed only in other
+                        bytes.extend(START_MARKER.as_bytes());
+                        bytes.extend(marker.as_bytes());
+                        bytes.extend(START_MARKER.as_bytes());
+                        bytes.extend(other_chunk);
+                        bytes.extend(END_MARKER.as_bytes());
+                        bytes.extend(marker.as_bytes());
+                        bytes.extend(END_MARKER.as_bytes());
+                    } else if old_chunk != new_chunk && old_chunk == other_chunk {
+                        // Changed only in new
+                        bytes.extend(new_chunk);
+                    } else if old_chunk != new_chunk && new_chunk == other_chunk {
+                        // Falsely conflicting, i.e. changed identically in both new and other
+                        bytes.extend(new_chunk);
+                    } else if (old_chunk != new_chunk && old_chunk != other_chunk &&
+                               new_chunk != other_chunk) {
+                        // Truly conflicting
+                        // In a normal 3-way merge program, this means a failed merge requiring user
+                        // intervention. Since we have no user to intervene and want to keep as much
+                        // vandalism as possible, we keep other_chunk here and keep going.
+                        bytes.extend(START_MARKER.as_bytes());
+                        bytes.extend(marker.as_bytes());
+                        bytes.extend(START_MARKER.as_bytes());
+                        bytes.extend(other_chunk);
+                        bytes.extend(END_MARKER.as_bytes());
+                        bytes.extend(marker.as_bytes());
+                        bytes.extend(END_MARKER.as_bytes());
+                    }
+                },
+            }
+        }
+        (String::from_utf8(bytes).unwrap(), false)
     }
-    (String::from_utf8(bytes).unwrap(), false)
 }
 
 /// Calculates a "diff3 parse" as described in Khanna, Kunal, and Pierce 2007, given the longest

@@ -43,6 +43,7 @@ use iron::mime::SubLevel;
 use iron::mime::TopLevel;
 use tempfile::NamedTempFile;
 
+use merge::Merger;
 use page::Page;
 use timer::Timer;
 use wiki::Revision;
@@ -96,82 +97,15 @@ mod wiki;
 // TODO: add performance-tuning flags: Size at which we skip diffs, number of consecutive timeouts
 // to tolerate, timeout on a single diff.
 
-/// Spawns a single merge thread. The thread starts with `section_content`, accepts (clean content,
-/// candalized content, revision ID) tuples over an MPSC channel, and merges each into the
-/// accumulated content to the extent possible. When the thread receives None over its input
-/// channel, it sends the merged content over another MPSC channel.
-///
-/// The return value is the tuple (the sender for the input channel, the receiver for the output
-/// channel).
-fn spawn_merge_thread(title: &str, section_title: String, section_content: String) ->
-    (Sender<Option<(String, String, u64)>>, Receiver<String>) {
-    let (in_sender, in_receiver) = channel::<Option<(String, String, u64)>>();
-    let (out_sender, out_receiver) = channel::<String>();
-    // TODO: delete
-    let section_t = section_title.clone();
-    thread::Builder::new().name(format!("merge-{}-{}", title, section_title)).spawn(move|| {
-        let mut merged_content = section_content;
-        // As you go backward in time, pages get different enough that they can't be quickly
-        // diffed against the current version of the page, and trying to do so is a waste of
-        // 500ms per revision. To avoid that, we stop trying to merge after seeing 3 timeouts in
-        // a row.
-        let mut consecutive_timeouts = 0;
-        let _timer = Timer::new(format!("Merged all revisions of \"{}\"", section_t));
-        loop {
-            match in_receiver.recv() {
-                Ok(Some((clean_content, vandalized_content, revision_id))) => {
-                    if consecutive_timeouts < 3 {
-                        let (merge_result, timed_out) = merge::try_merge(
-                            &clean_content, &merged_content, &vandalized_content,
-                            &revision_id.to_string());
-                        merged_content = merge_result;
-                        if timed_out {
-                            consecutive_timeouts += 1;
-                        } else {
-                            consecutive_timeouts = 0;
-                        }
-                    }
-                },
-                Ok(None) => {
-                    out_sender.send(merged_content);
-                    drop(_timer);
-                    break;
-                },
-                Err(err) => panic!("Failed to receive from in_receiver: {}", err),
-            }
-        }
-    });
-    (in_sender, out_receiver)
-}
-
-/// Given a list of (section title, section content) pairs, spawns one merge thread for each
-/// section, described in the documentatino on `spawn_merge_thread()`.
-///
-/// The return value is a 2-tuple of HashMaps. The first maps from the section title to the Sender
-/// for that section's thread's input channel, and the second maps from the section title to the
-/// Receiver for that section's thread's output channel.
-fn spawn_merge_threads<I>(title: &str, sections: I) ->
-    (HashMap<String, Sender<Option<(String, String, u64)>>>, HashMap<String, Receiver<String>>)
-    where I: IntoIterator<Item=(String, String)> {
-    let mut senders_map = HashMap::new();
-    let mut receivers_map = HashMap::new();
-    for (section_title, section_content) in sections.into_iter() {
-        let (in_sender, out_receiver) =
-            spawn_merge_thread(title, section_title.clone(), section_content);
-        senders_map.insert(section_title.clone(), in_sender);
-        receivers_map.insert(section_title, out_receiver);
-    }
-    (senders_map, receivers_map)
-}
-
 struct WikipediaMinusWikipediansHandler {
     wiki: Wiki,
-    client: Client
+    client: Client,
+    merger: Merger,
 }
 
 impl WikipediaMinusWikipediansHandler {
-    fn new(wiki: Wiki, client: Client) -> WikipediaMinusWikipediansHandler {
-        WikipediaMinusWikipediansHandler { wiki: wiki, client: client }
+    fn new(wiki: Wiki, client: Client, merger: Merger) -> WikipediaMinusWikipediansHandler {
+        WikipediaMinusWikipediansHandler { wiki: wiki, client: client, merger: merger }
     }
 
     /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
@@ -257,7 +191,7 @@ impl WikipediaMinusWikipediansHandler {
             deduplicate_section_titles(wiki::parse_sections(&latest_revision_content));
 
         let (revision_content_senders, merged_content_receivers) =
-            spawn_merge_threads(title, latest_revision_sections.clone());
+            self.spawn_merge_threads(title, latest_revision_sections.clone());
         let antivandalism_revisions = try!(self.get_antivandalism_revisions(&canonical_title));
 
         let _timer = Timer::new(format!("Fetched and merged {} revisions of \"{}\"",
@@ -283,6 +217,75 @@ impl WikipediaMinusWikipediansHandler {
         let _marker_timer = Timer::new("Mangled HTML".to_string());
         page.replace_body_and_remove_merge_markers(article_body)
     }
+
+    /// Spawns a single merge thread. The thread starts with `section_content`, accepts (clean
+    /// content, candalized content, revision ID) tuples over an MPSC channel, and merges each into
+    /// the accumulated content to the extent possible. When the thread receives None over its input
+    /// channel, it sends the merged content over another MPSC channel.
+    ///
+    /// The return value is the tuple (the sender for the input channel, the receiver for the output
+    /// channel).
+    fn spawn_merge_thread(&self, title: &str, section_title: String, section_content: String) ->
+        (Sender<Option<(String, String, u64)>>, Receiver<String>) {
+            let (in_sender, in_receiver) = channel::<Option<(String, String, u64)>>();
+            let (out_sender, out_receiver) = channel::<String>();
+            // TODO: delete
+            let section_t = section_title.clone();
+            let merger = self.merger.clone();
+            thread::Builder::new().name(format!("merge-{}-{}", title, section_title)).spawn(move|| {
+                let mut merged_content = section_content;
+                // As you go backward in time, pages get different enough that they can't be quickly
+                // diffed against the current version of the page, and trying to do so is a waste of
+                // 500ms per revision. To avoid that, we stop trying to merge after seeing 3 timeouts in
+                // a row.
+                let mut consecutive_timeouts = 0;
+                let _timer = Timer::new(format!("Merged all revisions of \"{}\"", section_t));
+                loop {
+                    match in_receiver.recv() {
+                        Ok(Some((clean_content, vandalized_content, revision_id))) => {
+                            if consecutive_timeouts < 3 {
+                                let (merge_result, timed_out) = merger.try_merge(
+                                    &clean_content, &merged_content, &vandalized_content,
+                                    &revision_id.to_string());
+                                merged_content = merge_result;
+                                if timed_out {
+                                    consecutive_timeouts += 1;
+                                } else {
+                                    consecutive_timeouts = 0;
+                                }
+                            }
+                        },
+                        Ok(None) => {
+                            out_sender.send(merged_content);
+                            drop(_timer);
+                            break;
+                        },
+                        Err(err) => panic!("Failed to receive from in_receiver: {}", err),
+                    }
+                }
+            });
+            (in_sender, out_receiver)
+        }
+
+    /// Given a list of (section title, section content) pairs, spawns one merge thread for each
+    /// section, described in the documentatino on `spawn_merge_thread()`.
+    ///
+    /// The return value is a 2-tuple of HashMaps. The first maps from the section title to the Sender
+    /// for that section's thread's input channel, and the second maps from the section title to the
+    /// Receiver for that section's thread's output channel.
+    fn spawn_merge_threads<I>(&self, title: &str, sections: I) ->
+        (HashMap<String, Sender<Option<(String, String, u64)>>>, HashMap<String, Receiver<String>>)
+        where I: IntoIterator<Item=(String, String)> {
+            let mut senders_map = HashMap::new();
+            let mut receivers_map = HashMap::new();
+            for (section_title, section_content) in sections.into_iter() {
+                let (in_sender, out_receiver) =
+                    self.spawn_merge_thread(title, section_title.clone(), section_content);
+                senders_map.insert(section_title.clone(), in_sender);
+                receivers_map.insert(section_title, out_receiver);
+            }
+            (senders_map, receivers_map)
+}
 }
 
 /// A Wikipedia article can have duplicate section titles (for example, as of this writing,
@@ -376,6 +379,7 @@ fn main() {
     let mut wiki = "en.wikipedia.org".to_string();
     let mut redis_hostname = "".to_string();
     let mut redis_port = 6379;
+    let mut diff_size_limit = 1000;
     {
         let mut parser = ArgumentParser::new();
         parser.set_description("TODO: Usage description");
@@ -388,6 +392,9 @@ fn main() {
         parser.refer(&mut redis_port).add_option(
             &["--redis_port"], Store,
             "The port of the Redis server to use. Ignored if --redis_hostname is blank.");
+        parser.refer(&mut diff_size_limit).add_option(
+            &["--diff_size_limit"], Store,
+            "The size in bytes at which a diff is considered too big, and is skipped.");
         parser.parse_args_or_exit();
     }
     let mut wiki_components = wiki.split(":");
@@ -410,7 +417,7 @@ fn main() {
     let handler =
         WikipediaMinusWikipediansHandler::new(
             Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new(), redis_connection_info),
-            Client::new());
+            Client::new(), Merger::new(diff_size_limit));
     Iron::new(handler).http(("localhost", port)).unwrap();
 }
 

@@ -193,6 +193,7 @@ pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> Option<Common
     where I: Iterator<Item=T> + Clone,
           T: Eq {
     let timeout_ns = time::precise_time_ns() + 500_000_000;
+
     let mut work_queue: BinaryHeap<Task<T, I>> = BinaryHeap::new();
     let first_task =
         Task {
