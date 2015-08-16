@@ -196,9 +196,7 @@ impl Merger {
         // It entirely too long to calculate diffs this large. Our latency budget doesn't cover it.
         if num::abs(old.len() as i64 - other.len() as i64) > self.diff_size_limit as i64 {
             info!("Skipped large diff");
-            // TODO: I should probably count this as a timeout. Experiment with that and see if it
-            // works.
-            return (new.to_owned(), false);
+            return (new.to_owned(), true);
         }
 
         let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
