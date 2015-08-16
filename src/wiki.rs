@@ -192,8 +192,8 @@ impl Wiki {
     }
 }
 
-/// Parses out the sections of a Wikipedia page. Returns a vector of (section name, section
-/// content). Section name is "" for the content before the first heading. Section content
+/// Parses out the sections of a Wikipedia page. Returns a vector of (section title, section
+/// content). Section title is "" for the content before the first heading. Section content
 /// includes the heading.
 pub fn parse_sections(wikitext: &str) -> Vec<(String, String)> {
     // TODO: Should this match sections with empty headings (e.g. "\n== ==\n")? I assume not.

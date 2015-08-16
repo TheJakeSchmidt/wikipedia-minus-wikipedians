@@ -18,6 +18,7 @@ extern crate url;
 use argparse::ArgumentParser;
 use argparse::Store;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
@@ -47,13 +48,17 @@ use timer::Timer;
 use wiki::Revision;
 use wiki::Wiki;
 
-// To mark areas of the merged text that were merged in from vandalized edits, the code uses
-// placeholder characters at the start and end of each merged region.
-//
-// These two characters are taken from a Unicode Private Use Area, so they should never appear in
-// actual Wikipedia text.
+/// To mark areas of the merged text that were merged in from vandalized edits, the code uses
+/// placeholder characters at the start and end of each merged region.
+///
+/// These two characters are taken from a Unicode Private Use Area, so they should never appear in
+/// actual Wikipedia text.
 const START_MARKER: &'static str = "\u{E000}";
 const END_MARKER: &'static str = "\u{E001}";
+
+/// See the documentation for `deduplicate_section_titles` for a description of how this constant is
+/// used.
+const TITLE_COUNT_SEPARATOR: &'static str = "\u{E002}";
 
 /// Helper macro for unwrapping Result values whose E types implement std::fmt::Display. For Ok(),
 /// evaluates to the contained value. For Err(), returns early with an Err containing the formatted
@@ -187,7 +192,8 @@ impl WikipediaMinusWikipediansHandler {
                     .spawn(move|| {
                         sender.send(
                             match wiki.get_revision_content(&title, revision_id) {
-                                Ok(content) => Ok(wiki::parse_sections(&content)),
+                                Ok(content) =>
+                                    Ok(deduplicate_section_titles(wiki::parse_sections(&content))),
                                 _ => Err(format!(
                                     "Failed to get content of revision {} of \"{}\"", revision_id,
                                     title)),
@@ -234,7 +240,8 @@ impl WikipediaMinusWikipediansHandler {
         let latest_revision = try!(self.wiki.get_latest_revision(&canonical_title));
         let latest_revision_content =
                 try!(self.wiki.get_revision_content(&canonical_title, latest_revision.revid));
-        let latest_revision_sections = wiki::parse_sections(&latest_revision_content);
+        let latest_revision_sections =
+            deduplicate_section_titles(wiki::parse_sections(&latest_revision_content));
 
         let (revision_content_senders, merged_content_receivers) =
             spawn_merge_threads(title, latest_revision_sections.clone());
@@ -263,6 +270,26 @@ impl WikipediaMinusWikipediansHandler {
         let _marker_timer = Timer::new("Mangled HTML".to_string());
         page.replace_body_and_remove_merge_markers(article_body)
     }
+}
+
+/// A Wikipedia article can have duplicate section titles (for example, as of this writing,
+/// Richard_Feynman has two "Bibliography" sections). This function adds a separator character,
+/// followed by "1", "2", "3", etc., to the ends of the duplicate section titles in each (section
+/// title, section content) tuple. This makes an iterator suitable for use in building a HashMap,
+/// because the keys are all unique. The separator character ensures it's not possible for an input
+/// of the form [("t", _), ("t", _), ("t2", _)] to cause still-duplicated section titles in the
+/// output.
+fn deduplicate_section_titles<I>(mut sections: I) -> Vec<(String, String)>
+    where I: IntoIterator<Item=(String, String)> {
+    let mut title_counts: HashMap<String, usize> = HashMap::new();
+    let mut deduplicated_sections = Vec::new();
+    for (section_title, section_content) in sections {
+        let entry = title_counts.entry(section_title.clone()).or_insert(0);
+        *entry += 1;
+        deduplicated_sections.push(
+            (section_title + TITLE_COUNT_SEPARATOR + &(*entry).to_string(), section_content));
+    }
+    deduplicated_sections
 }
 
 impl Handler for WikipediaMinusWikipediansHandler {
@@ -372,4 +399,22 @@ fn main() {
             Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new(), redis_connection_info),
             Client::new());
     Iron::new(handler).http(("localhost", port)).unwrap();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TITLE_COUNT_SEPARATOR, deduplicate_section_titles};
+
+    #[test]
+    fn test_deduplicate_section_titles() {
+        let input = vec![("title1".to_owned(), "content1".to_owned()),
+                         ("title1".to_owned(), "content2".to_owned()),
+                         ("title2".to_owned(), "content3".to_owned()),
+                         ("title1".to_owned(), "content4".to_owned())];
+        let expected = vec![(format!("title1{}1", TITLE_COUNT_SEPARATOR), "content1".to_owned()),
+                            (format!("title1{}2", TITLE_COUNT_SEPARATOR), "content2".to_owned()),
+                            (format!("title2{}1", TITLE_COUNT_SEPARATOR), "content3".to_owned()),
+                            (format!("title1{}3", TITLE_COUNT_SEPARATOR), "content4".to_owned())];
+        assert_eq!(expected, deduplicate_section_titles(input));
+    }
 }
