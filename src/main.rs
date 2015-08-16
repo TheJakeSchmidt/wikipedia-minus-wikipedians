@@ -380,6 +380,7 @@ fn main() {
     let mut redis_hostname = "".to_string();
     let mut redis_port = 6379;
     let mut diff_size_limit = 1000;
+    let mut diff_time_limit_ms = 500;
     {
         let mut parser = ArgumentParser::new();
         parser.set_description("TODO: Usage description");
@@ -395,6 +396,9 @@ fn main() {
         parser.refer(&mut diff_size_limit).add_option(
             &["--diff_size_limit"], Store,
             "The size in bytes at which a diff is considered too big, and is skipped.");
+        parser.refer(&mut diff_time_limit_ms).add_option(
+            &["--diff_time_limit_ms"], Store,
+            "The maximum time (in milliseconds) to attempt to compute a diff before giving up.");
         parser.parse_args_or_exit();
     }
     let mut wiki_components = wiki.split(":");
@@ -417,7 +421,7 @@ fn main() {
     let handler =
         WikipediaMinusWikipediansHandler::new(
             Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new(), redis_connection_info),
-            Client::new(), Merger::new(diff_size_limit));
+            Client::new(), Merger::new(diff_size_limit, diff_time_limit_ms));
     Iron::new(handler).http(("localhost", port)).unwrap();
 }
 

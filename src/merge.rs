@@ -175,11 +175,12 @@ pub struct Merger {
     /// The size (in bytes) above which a diff is automatically skipped, without any attempt to
     /// merge.
     diff_size_limit: usize,
+    diff_time_limit_ms: u64,
 }
 
 impl Merger {
-    pub fn new(diff_size_limit: usize) -> Merger {
-        Merger { diff_size_limit: diff_size_limit }
+    pub fn new(diff_size_limit: usize, diff_time_limit_ms: u64) -> Merger {
+        Merger { diff_size_limit: diff_size_limit, diff_time_limit_ms: diff_time_limit_ms }
     }
 
     /// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
@@ -201,9 +202,9 @@ impl Merger {
         }
 
         let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
-            old_words.clone(), new_words.clone());
+            old_words.clone(), new_words.clone(), self.diff_time_limit_ms);
         let other_lcs = longest_common_subsequence::get_longest_common_subsequence(
-            old_words.clone(), other_words.clone());
+            old_words.clone(), other_words.clone(), self.diff_time_limit_ms);
         let (new_lcs, other_lcs) = match (new_lcs, other_lcs) {
             (Some(new_lcs), Some(other_lcs)) => (new_lcs, other_lcs),
             _ => { info!("Timed out computing LCS"); return (new.to_owned(), true); },

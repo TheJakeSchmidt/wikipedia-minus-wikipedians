@@ -188,11 +188,11 @@ impl<T, I> Ord for Task<T, I> where I: Iterator<Item=T> + Clone {
     }
 }
 
-// Returns None if the calculation takes more than 500 ms.
-pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I) -> Option<CommonSubsequence>
+/// Returns None if the calculation takes more than `time_limit_ms` milliseconds.
+pub fn get_longest_common_subsequence<T, I>(iter1: I, iter2: I, time_limit_ms: u64) -> Option<CommonSubsequence>
     where I: Iterator<Item=T> + Clone,
           T: Eq {
-    let timeout_ns = time::precise_time_ns() + 500_000_000;
+    let timeout_ns = time::precise_time_ns() + time_limit_ms * 1_000_000;
 
     let mut work_queue: BinaryHeap<Task<T, I>> = BinaryHeap::new();
     let first_task =
