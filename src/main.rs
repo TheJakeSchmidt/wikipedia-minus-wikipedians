@@ -103,13 +103,26 @@ fn spawn_threads<I>(sections: I) ->
         let section_t = section_title.clone();
         thread::spawn(move|| {
             let mut merged_content = section_content;
+            // As you go backward in time, pages get different enough that they can't be quickly
+            // diffed against the current version of the page, and trying to do so is a waste of
+            // 500ms per revision. To avoid that, we stop trying to merge after seeing 3 timeouts in
+            // a row.
+            let mut consecutive_timeouts = 0;
             let _timer = Timer::new(format!("Merged all revisions of \"{}\"", section_t));
             loop {
                 match in_receiver.recv() {
                     Ok(Some((clean_content, vandalized_content, revision_id))) => {
-                        merged_content = merge::try_merge(
-                            &clean_content, &merged_content, &vandalized_content,
-                            &revision_id.to_string());
+                        if consecutive_timeouts < 3 {
+                            let (merge_result, timed_out) =  merge::try_merge(
+                                &clean_content, &merged_content, &vandalized_content,
+                                &revision_id.to_string());
+                            merged_content = merge_result;
+                            if timed_out {
+                                consecutive_timeouts += 1;
+                            } else {
+                                consecutive_timeouts = 0;
+                            }
+                        }
                     },
                     Ok(None) => {
                         out_sender.send(merged_content);
@@ -149,6 +162,8 @@ impl WikipediaMinusWikipediansHandler {
         senders: HashMap<String, Sender<Option<(String, String, u64)>>>) -> Result<(), String> {
         let _timer =
             Timer::new(format!("Got content of {} revisions of \"{}\"", revisions.len(), title));
+        // Elements are (clean revision ID, receiver for clean revision content, receiver for
+        // vandalized revision content).
         let mut receivers: Vec<(u64, Receiver<Result<Vec<(String, String)>, String>>,
                                 Receiver<Result<Vec<(String, String)>, String>>)> =
             Vec::with_capacity(revisions.len());
@@ -171,7 +186,7 @@ impl WikipediaMinusWikipediansHandler {
                 inner_receivers.push(receiver);
             }
             receivers.push(
-                (revision.parentid, inner_receivers.remove(0), inner_receivers.remove(0)));
+                (revision.revid, inner_receivers.remove(0), inner_receivers.remove(0)));
         }
 
         for (revision_id, clean_receiver, vandalized_receiver) in receivers {

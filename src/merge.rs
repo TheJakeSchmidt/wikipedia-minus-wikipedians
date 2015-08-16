@@ -12,6 +12,7 @@ use std::str::CharIndices;
 
 use ::longest_common_subsequence;
 use ::longest_common_subsequence::CommonSubsequence;
+use timer::Timer;
 
 /// Represents the states of a 4-state machine representing the traversal through `old` to find
 /// stable and unstable chunks: at any given moment, the part of `old` under consideration is either
@@ -168,8 +169,11 @@ impl<'a> Iterator for Words<'a> {
 }
 
 /// Attempts a 3-way merge, merging `new` and `other` under the assumption that both diverged from
-/// `old`. If the strings do not merge together cleanly, returns `new`.
-pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> String {
+/// `old`. If the strings do not merge together cleanly, returns `new`. Marks regions merged from
+/// `other` by putting `START_MARKER`, then `marker`, then `START_MARKER` at the beginning, and
+/// `END_MARKER`, `marker`, and `END_MARKER` at the end.
+/// TODO: describe return value
+pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> (String, bool) {
     let mut old_words = Words::new(old);
     let mut new_words = Words::new(new);
     let mut other_words = Words::new(other);
@@ -177,16 +181,24 @@ pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> String {
     // It entirely too long to calculate diffs this large. Our latency budget doesn't cover it.
     if num::abs(old.len() as i64 - other.len() as i64) > 1000 {
         info!("Skipped large diff");
-        return new.to_owned();
+        return (new.to_owned(), false);
     }
 
+    let _timer = Timer::new(format!("Found LCS with current content for revision {}", marker));
     let new_lcs = longest_common_subsequence::get_longest_common_subsequence(
         old_words.clone(), new_words.clone());
+    drop(_timer);
+
+    let _timer = Timer::new(format!("Found LCS with vandalized content for revision {}", marker));
     let other_lcs = longest_common_subsequence::get_longest_common_subsequence(
         old_words.clone(), other_words.clone());
+    drop(_timer);
     let (new_lcs, other_lcs) = match (new_lcs, other_lcs) {
         (Some(new_lcs), Some(other_lcs)) => (new_lcs, other_lcs),
-        _ => { return new.to_owned() },
+        _ => {
+            info!("Failed to calculate one or both LCSes for revision {}", marker);
+            return (new.to_owned(), true);
+        },
     };
 
     let mut bytes = Vec::<u8>::new();
@@ -236,12 +248,12 @@ pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> String {
                 } else if (old_chunk != new_chunk && old_chunk != other_chunk &&
                            new_chunk != other_chunk) {
                     // Truly conflicting
-                    return new.to_owned();
+                    return (new.to_owned(), false);
                 }
             },
         }
     }
-    String::from_utf8(bytes).unwrap()
+    (String::from_utf8(bytes).unwrap(), false)
 }
 
 /// Calculates a "diff3 parse" as described in Khanna, Kunal, and Pierce 2007, given the longest
@@ -426,9 +438,11 @@ mod tests {
         assert_eq!(None, words.next());
     }
 
+    // TODO: Add test for timeout
+
     #[test]
     fn test_try_merge_empty() {
-        assert_eq!("".to_string(), try_merge("", "", "", ""));
+        assert_eq!(("".to_string(), false), try_merge("", "", "", ""));
     }
 
     #[test]
@@ -438,7 +452,7 @@ mod tests {
         let other = "First sentence changed. Second sentence.";
         let expected = format!("First {}test{}sentence changed. {}test{}Second sentence changed.",
                                ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
-        assert_eq!(expected, try_merge(old, new, other, "test"));
+        assert_eq!((expected, false), try_merge(old, new, other, "test"));
     }
 
     #[test]
@@ -446,7 +460,7 @@ mod tests {
         let old = "First sentence. Second sentence.";
         let new = "First sentence. Second sentence changed one way.";
         let other = "First sentence changed. Second sentence changed a different way.";
-        assert_eq!(new, try_merge(old, new, other, "test"));
+        assert_eq!((new, false), try_merge(old, new, other, "test"));
     }
 
     #[test]
@@ -456,7 +470,7 @@ mod tests {
         let other = "Test string. 2";
         let expected = format!("Test 1 string. {}test{}2{}test{}",
                                ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
-        assert_eq!(expected, try_merge(old, new, other, "test"));
+        assert_eq!((expected, false), try_merge(old, new, other, "test"));
     }
 
     #[test]
@@ -467,7 +481,7 @@ mod tests {
         let expected = format!(
             "First {}test{}sentence さようなら. {}test{}Second sentence 𐅃.",
             ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
-        assert_eq!(expected, try_merge(old, new, other, "test"));
+        assert_eq!((expected, false), try_merge(old, new, other, "test"));
     }
 
     #[test]
