@@ -96,11 +96,56 @@ mod wiki;
 // TODO: add performance-tuning flags: Size at which we skip diffs, number of consecutive timeouts
 // to tolerate, timeout on a single diff.
 
-/// Given a list of (section title, section content) pairs, spawns one thread for each section. Each
-/// thread accepts (clean content, vandalized content, revision ID) tuples for its section over a
-/// MPSC channel, in reverse chronological order, and merges each one in to the extent
-/// possible. When a thread receives None over its input channel, it sends the merged content over
-/// its output channel.
+/// Spawns a single merge thread. The thread starts with `section_content`, accepts (clean content,
+/// candalized content, revision ID) tuples over an MPSC channel, and merges each into the
+/// accumulated content to the extent possible. When the thread receives None over its input
+/// channel, it sends the merged content over another MPSC channel.
+///
+/// The return value is the tuple (the sender for the input channel, the receiver for the output
+/// channel).
+fn spawn_merge_thread(title: &str, section_title: String, section_content: String) ->
+    (Sender<Option<(String, String, u64)>>, Receiver<String>) {
+    let (in_sender, in_receiver) = channel::<Option<(String, String, u64)>>();
+    let (out_sender, out_receiver) = channel::<String>();
+    // TODO: delete
+    let section_t = section_title.clone();
+    thread::Builder::new().name(format!("merge-{}-{}", title, section_title)).spawn(move|| {
+        let mut merged_content = section_content;
+        // As you go backward in time, pages get different enough that they can't be quickly
+        // diffed against the current version of the page, and trying to do so is a waste of
+        // 500ms per revision. To avoid that, we stop trying to merge after seeing 3 timeouts in
+        // a row.
+        let mut consecutive_timeouts = 0;
+        let _timer = Timer::new(format!("Merged all revisions of \"{}\"", section_t));
+        loop {
+            match in_receiver.recv() {
+                Ok(Some((clean_content, vandalized_content, revision_id))) => {
+                    if consecutive_timeouts < 3 {
+                        let (merge_result, timed_out) = merge::try_merge(
+                            &clean_content, &merged_content, &vandalized_content,
+                            &revision_id.to_string());
+                        merged_content = merge_result;
+                        if timed_out {
+                            consecutive_timeouts += 1;
+                        } else {
+                            consecutive_timeouts = 0;
+                        }
+                    }
+                },
+                Ok(None) => {
+                    out_sender.send(merged_content);
+                    drop(_timer);
+                    break;
+                },
+                Err(err) => panic!("Failed to receive from in_receiver: {}", err),
+            }
+        }
+    });
+    (in_sender, out_receiver)
+}
+
+/// Given a list of (section title, section content) pairs, spawns one merge thread for each
+/// section, described in the documentatino on `spawn_merge_thread()`.
 ///
 /// The return value is a 2-tuple of HashMaps. The first maps from the section title to the Sender
 /// for that section's thread's input channel, and the second maps from the section title to the
@@ -111,42 +156,8 @@ fn spawn_merge_threads<I>(title: &str, sections: I) ->
     let mut senders_map = HashMap::new();
     let mut receivers_map = HashMap::new();
     for (section_title, section_content) in sections.into_iter() {
-        let (in_sender, in_receiver) = channel::<Option<(String, String, u64)>>();
-        let (out_sender, out_receiver) = channel::<String>();
-        // TODO: delete
-        let section_t = section_title.clone();
-        thread::Builder::new().name(format!("merge-{}-{}", title, section_title)).spawn(move|| {
-            let mut merged_content = section_content;
-            // As you go backward in time, pages get different enough that they can't be quickly
-            // diffed against the current version of the page, and trying to do so is a waste of
-            // 500ms per revision. To avoid that, we stop trying to merge after seeing 3 timeouts in
-            // a row.
-            let mut consecutive_timeouts = 0;
-            let _timer = Timer::new(format!("Merged all revisions of \"{}\"", section_t));
-            loop {
-                match in_receiver.recv() {
-                    Ok(Some((clean_content, vandalized_content, revision_id))) => {
-                        if consecutive_timeouts < 3 {
-                            let (merge_result, timed_out) =  merge::try_merge(
-                                &clean_content, &merged_content, &vandalized_content,
-                                &revision_id.to_string());
-                            merged_content = merge_result;
-                            if timed_out {
-                                consecutive_timeouts += 1;
-                            } else {
-                                consecutive_timeouts = 0;
-                            }
-                        }
-                    },
-                    Ok(None) => {
-                        out_sender.send(merged_content);
-                        drop(_timer);
-                        break;
-                    },
-                    Err(err) => panic!("Failed to receive from in_receiver: {}", err),
-                }
-            }
-        });
+        let (in_sender, out_receiver) =
+            spawn_merge_thread(title, section_title.clone(), section_content);
         senders_map.insert(section_title.clone(), in_sender);
         receivers_map.insert(section_title, out_receiver);
     }
