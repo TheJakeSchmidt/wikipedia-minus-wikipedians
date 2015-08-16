@@ -72,7 +72,7 @@ impl Page {
                                   -> Receiver<Result<String, String>> {
         let (page_skeleton_sender, page_skeleton_receiver) = channel::<Result<String, String>>();
         let title = title.to_owned().clone();
-        thread::spawn(move|| {
+        thread::Builder::new().name(format!("fetch-skeleton-{}", title)).spawn(move|| {
             page_skeleton_sender.send(
                 match wiki.get_current_page_content(&title) {
                     Ok(content) =>

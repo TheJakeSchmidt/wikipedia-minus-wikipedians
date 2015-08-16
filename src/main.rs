@@ -47,8 +47,6 @@ use timer::Timer;
 use wiki::Revision;
 use wiki::Wiki;
 
-// TODO: I'm spawning a lot of threads now. I should be naming them meaningfully.
-
 // To mark areas of the merged text that were merged in from vandalized edits, the code uses
 // placeholder characters at the start and end of each merged region.
 //
@@ -100,7 +98,7 @@ mod wiki;
 /// The return value is a 2-tuple of HashMaps. The first maps from the section title to the Sender
 /// for that section's thread's input channel, and the second maps from the section title to the
 /// Receiver for that section's thread's output channel.
-fn spawn_merge_threads<I>(sections: I) ->
+fn spawn_merge_threads<I>(title: &str, sections: I) ->
     (HashMap<String, Sender<Option<(String, String, u64)>>>, HashMap<String, Receiver<String>>)
     where I: IntoIterator<Item=(String, String)> {
     let mut senders_map = HashMap::new();
@@ -110,7 +108,7 @@ fn spawn_merge_threads<I>(sections: I) ->
         let (out_sender, out_receiver) = channel::<String>();
         // TODO: delete
         let section_t = section_title.clone();
-        thread::spawn(move|| {
+        thread::Builder::new().name(format!("merge-{}-{}", title, section_title)).spawn(move|| {
             let mut merged_content = section_content;
             // As you go backward in time, pages get different enough that they can't be quickly
             // diffed against the current version of the page, and trying to do so is a waste of
@@ -185,15 +183,16 @@ impl WikipediaMinusWikipediansHandler {
                 let wiki = self.wiki.clone();
                 let title = title.to_string().clone();
                 let revision = revision.clone();
-                thread::spawn(move|| {
-                    sender.send(
-                        match wiki.get_revision_content(&title, revision_id) {
-                            Ok(content) => Ok(wiki::parse_sections(&content)),
-                            _ => Err(format!(
-                                "Failed to get content of revision {} of \"{}\"", revision_id,
-                                title)),
-                        }).unwrap();
-                });
+                thread::Builder::new().name(format!("fetch-content-{}-{}", title, revision_id))
+                    .spawn(move|| {
+                        sender.send(
+                            match wiki.get_revision_content(&title, revision_id) {
+                                Ok(content) => Ok(wiki::parse_sections(&content)),
+                                _ => Err(format!(
+                                    "Failed to get content of revision {} of \"{}\"", revision_id,
+                                    title)),
+                            }).unwrap();
+                    });
                 inner_receivers.push(receiver);
             }
             receivers.push(
@@ -238,7 +237,7 @@ impl WikipediaMinusWikipediansHandler {
         let latest_revision_sections = wiki::parse_sections(&latest_revision_content);
 
         let (revision_content_senders, merged_content_receivers) =
-            spawn_merge_threads(latest_revision_sections.clone());
+            spawn_merge_threads(title, latest_revision_sections.clone());
         let antivandalism_revisions = try!(self.get_antivandalism_revisions(&canonical_title));
 
         let _timer = Timer::new(format!("Fetched and merged {} revisions of \"{}\"",
