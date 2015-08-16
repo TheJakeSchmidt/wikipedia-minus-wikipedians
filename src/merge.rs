@@ -248,7 +248,10 @@ pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> (String, bo
                 } else if (old_chunk != new_chunk && old_chunk != other_chunk &&
                            new_chunk != other_chunk) {
                     // Truly conflicting
-                    return (new.to_owned(), false);
+                    // In a normal 3-way merge program, this means a failed merge requiring user
+                    // intervention. Since we have no user to intervene and want to keep as much
+                    // vandalism as possible, we keep new_chunk here so we can keep going.
+                    bytes.extend(new_chunk);
                 }
             },
         }
