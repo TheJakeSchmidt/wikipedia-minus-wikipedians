@@ -461,9 +461,10 @@ mod tests {
         let old = "First sentence. Second sentence.";
         let new = "First sentence. Second sentence changed one way.";
         let other = "First sentence changed. Second sentence changed a different way.";
-        let expected =
-            format!("First {}123{}sentence changed. {}123{}Second sentence changed one way.",
-                    ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+        let expected = format!(
+            "First {}123{}sentence changed. {}123{}Second {}123{}sentence changed a different way.{}123{}",
+            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER,
+            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
         assert_eq!((expected, false), try_merge(old, new, other, "123"));
     }
 
