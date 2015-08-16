@@ -94,18 +94,23 @@ mod wiki;
 
 // TODO: consider doing s/en.wikipedia.org/this app's url/ on the HTML before serving it. This
 // currently works fine, but might not over HTTPS.
-// TODO: add performance-tuning flags: Size at which we skip diffs, number of consecutive timeouts
-// to tolerate, timeout on a single diff.
 
 struct WikipediaMinusWikipediansHandler {
     wiki: Wiki,
     client: Client,
     merger: Merger,
+    max_consecutive_diff_timeouts: u64,
 }
 
 impl WikipediaMinusWikipediansHandler {
-    fn new(wiki: Wiki, client: Client, merger: Merger) -> WikipediaMinusWikipediansHandler {
-        WikipediaMinusWikipediansHandler { wiki: wiki, client: client, merger: merger }
+    fn new(wiki: Wiki, client: Client, merger: Merger, max_consecutive_diff_timeouts: u64) ->
+        WikipediaMinusWikipediansHandler {
+        WikipediaMinusWikipediansHandler {
+            wiki: wiki,
+            client: client,
+            merger: merger,
+            max_consecutive_diff_timeouts: max_consecutive_diff_timeouts,
+        }
     }
 
     /// Returns a vector of Revisions representing all reversions of vandalism for the page `title`.
@@ -232,18 +237,19 @@ impl WikipediaMinusWikipediansHandler {
             // TODO: delete
             let section_t = section_title.clone();
             let merger = self.merger.clone();
+            let max_consecutive_diff_timeouts = self.max_consecutive_diff_timeouts;
             thread::Builder::new().name(format!("merge-{}-{}", title, section_title)).spawn(move|| {
                 let mut merged_content = section_content;
                 // As you go backward in time, pages get different enough that they can't be quickly
                 // diffed against the current version of the page, and trying to do so is a waste of
-                // 500ms per revision. To avoid that, we stop trying to merge after seeing 3 timeouts in
-                // a row.
+                // 500ms per revision. To avoid that, we stop trying to merge after seeing (by
+                // default) 3 timeouts in a row.
                 let mut consecutive_timeouts = 0;
                 let _timer = Timer::new(format!("Merged all revisions of \"{}\"", section_t));
                 loop {
                     match in_receiver.recv() {
                         Ok(Some((clean_content, vandalized_content, revision_id))) => {
-                            if consecutive_timeouts < 3 {
+                            if consecutive_timeouts < max_consecutive_diff_timeouts {
                                 let (merge_result, timed_out) = merger.try_merge(
                                     &clean_content, &merged_content, &vandalized_content,
                                     &revision_id.to_string());
@@ -381,6 +387,7 @@ fn main() {
     let mut redis_port = 6379;
     let mut diff_size_limit = 1000;
     let mut diff_time_limit_ms = 500;
+    let mut max_consecutive_diff_timeouts = 3;
     {
         let mut parser = ArgumentParser::new();
         parser.set_description("TODO: Usage description");
@@ -399,6 +406,9 @@ fn main() {
         parser.refer(&mut diff_time_limit_ms).add_option(
             &["--diff_time_limit_ms"], Store,
             "The maximum time (in milliseconds) to attempt to compute a diff before giving up.");
+        parser.refer(&mut max_consecutive_diff_timeouts).add_option(
+            &["--max_consecutive_diff_timeouts"], Store,
+            "The maximum number of consecutive diff-too-large or diff-timeout failures to accept before ceasing to merge a section.");
         parser.parse_args_or_exit();
     }
     let mut wiki_components = wiki.split(":");
@@ -421,7 +431,8 @@ fn main() {
     let handler =
         WikipediaMinusWikipediansHandler::new(
             Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new(), redis_connection_info),
-            Client::new(), Merger::new(diff_size_limit, diff_time_limit_ms));
+            Client::new(), Merger::new(diff_size_limit, diff_time_limit_ms),
+            max_consecutive_diff_timeouts);
     Iron::new(handler).http(("localhost", port)).unwrap();
 }
 
