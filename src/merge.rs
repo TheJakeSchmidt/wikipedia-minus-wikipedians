@@ -10,6 +10,8 @@ use std::cmp::Ordering;
 use std::iter::FromIterator;
 use std::str::CharIndices;
 
+use ::START_MARKER;
+use ::END_MARKER;
 use ::longest_common_subsequence;
 use ::longest_common_subsequence::CommonSubsequence;
 use timer::Timer;
@@ -224,13 +226,13 @@ pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> (String, bo
 
                 if old_chunk == new_chunk && old_chunk != other_chunk {
                     // Changed only in other
-                    bytes.extend(::START_MARKER.as_bytes());
+                    bytes.extend(START_MARKER.as_bytes());
                     bytes.extend(marker.as_bytes());
-                    bytes.extend(::START_MARKER.as_bytes());
+                    bytes.extend(START_MARKER.as_bytes());
                     bytes.extend(other_chunk);
-                    bytes.extend(::END_MARKER.as_bytes());
+                    bytes.extend(END_MARKER.as_bytes());
                     bytes.extend(marker.as_bytes());
-                    bytes.extend(::END_MARKER.as_bytes());
+                    bytes.extend(END_MARKER.as_bytes());
                 } else if old_chunk != new_chunk && old_chunk == other_chunk {
                     // Changed only in new
                     bytes.extend(new_chunk);
@@ -243,13 +245,13 @@ pub fn try_merge(old: &str, new: &str, other: &str, marker: &str) -> (String, bo
                     // In a normal 3-way merge program, this means a failed merge requiring user
                     // intervention. Since we have no user to intervene and want to keep as much
                     // vandalism as possible, we keep other_chunk here and keep going.
-                    bytes.extend(::START_MARKER.as_bytes());
+                    bytes.extend(START_MARKER.as_bytes());
                     bytes.extend(marker.as_bytes());
-                    bytes.extend(::START_MARKER.as_bytes());
+                    bytes.extend(START_MARKER.as_bytes());
                     bytes.extend(other_chunk);
-                    bytes.extend(::END_MARKER.as_bytes());
+                    bytes.extend(END_MARKER.as_bytes());
                     bytes.extend(marker.as_bytes());
-                    bytes.extend(::END_MARKER.as_bytes());
+                    bytes.extend(END_MARKER.as_bytes());
                 }
             },
         }
@@ -393,6 +395,7 @@ fn calculate_next_state(match_state: &MatchState, transition: &MatchStateTransit
 mod tests {
     use super::{Chunk, calculate_match_state_transitions, parse, try_merge, Words};
     use super::MatchStateTransition::*;
+    use ::{START_MARKER, END_MARKER};
     use longest_common_subsequence::{CommonSubsequence, CommonRegion};
     use regex::Regex;
 
@@ -452,7 +455,7 @@ mod tests {
         let new = "First sentence. Second sentence changed.";
         let other = "First sentence changed. Second sentence.";
         let expected = format!("First {}test{}sentence changed. {}test{}Second sentence changed.",
-                               ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+                               START_MARKER, START_MARKER, END_MARKER, END_MARKER);
         assert_eq!((expected, false), try_merge(old, new, other, "test"));
     }
 
@@ -463,8 +466,8 @@ mod tests {
         let other = "First sentence changed. Second sentence changed a different way.";
         let expected = format!(
             "First {}123{}sentence changed. {}123{}Second {}123{}sentence changed a different way.{}123{}",
-            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER,
-            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+            START_MARKER, START_MARKER, END_MARKER, END_MARKER,
+            START_MARKER, START_MARKER, END_MARKER, END_MARKER);
         assert_eq!((expected, false), try_merge(old, new, other, "123"));
     }
 
@@ -474,7 +477,7 @@ mod tests {
         let new = "Test 1 string. ";
         let other = "Test string. 2";
         let expected = format!("Test 1 string. {}test{}2{}test{}",
-                               ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+                               START_MARKER, START_MARKER, END_MARKER, END_MARKER);
         assert_eq!((expected, false), try_merge(old, new, other, "test"));
     }
 
@@ -485,7 +488,7 @@ mod tests {
         let other = "First sentence さようなら. Second sentence.";
         let expected = format!(
             "First {}test{}sentence さようなら. {}test{}Second sentence 𐅃.",
-            ::START_MARKER, ::START_MARKER, ::END_MARKER, ::END_MARKER);
+            START_MARKER, START_MARKER, END_MARKER, END_MARKER);
         assert_eq!((expected, false), try_merge(old, new, other, "test"));
     }
 
