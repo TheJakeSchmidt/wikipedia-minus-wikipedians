@@ -1,0 +1,12 @@
+# An Upstart configuration file for running the Wikipedia Minus Wikipedians server on Ubuntu
+# systems. REDIS_HOSTNAME_PLACEHOLDER is replaced by the Redis hostname by deploy_revision.sh before
+# this file is pushed to an EC2 instance.
+
+description "Run Wikipedia Minus Wikipedians server."
+
+stop on runlevel [!2345]
+
+script
+    cd /home/ubuntu
+    ./wikipedia_minus_wikipedians --port 80 --redis_hostname=REDIS_HOSTNAME_PLACEHOLDER
+end script

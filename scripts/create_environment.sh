@@ -7,6 +7,8 @@
 # script contains the environment name, so that many environments can coexist in isolation from each
 # other.
 #
+# The environment name must be no longer than 17 characters.
+#
 # Usage: create_environment.sh <environment> <instance type> <number of instances>
 
 environment_name=$1
@@ -41,9 +43,20 @@ aws deploy create-application --application-name WikipediaMinusWikipedians$(echo
 echo Creating CodeDeploy deployment group WikipediaMinusWikipedians$(echo $environment_name)...
 aws deploy create-deployment-group --application-name WikipediaMinusWikipedians$(echo $environment_name) --deployment-group-name WikipediaMinusWikipedians$(echo $environment_name) --service-role-arn $(aws iam get-role --role-name Wikipedia-Minus-Wikipedians-$environment_name-CodeDeploy --query "Role.Arn" --output text) --ec2-tag-filters Key=WikipediaMinusWikipediansEnvironment,Value=$environment_name,Type=KEY_AND_VALUE
 
+echo Creating security group wikipedia-minus-wikipedians-elasticache-$environment_name
+aws ec2 create-security-group --group-name wikipedia-minus-wikipedians-elasticache-$environment_name --description "Security group for ElastiCache cluster in Wikipedia Minus Wikipedians environment $environment_name"
+echo Authorizing inbound Redis for security group wikipedia-minus-wikipedians-elasticache-$environment_name...
+aws ec2 authorize-security-group-ingress --group-name wikipedia-minus-wikipedians-elasticache-$environment_name --protocol tcp --port 6379 --cidr 0.0.0.0/0
+
+# Note: Cache cluster IDs are limited to 20 characters.
+echo Creating ElastiCache cache cluster WMW$environment_name...
+# TODO: take the cache node type from a command line argument
+# TODO: pass an availability zone here
+aws elasticache create-cache-cluster --cache-cluster-id WMW$environment_name --cache-node-type cache.t2.micro --engine redis --port 6379 --num-cache-nodes 1 --security-group-ids $(aws ec2 describe-security-groups --group-names wikipedia-minus-wikipedians-elasticache-$environment_name | ./parse_security_group_ids.py)
+
 # Bring up EC2 instances
 echo Creating EC2 security group wikipedia-minus-wikipedians-$environment_name...
-aws ec2 create-security-group --group-name wikipedia-minus-wikipedians-$environment_name --description "Security group for Wikipedia Minus Wikipedians instance $environment_name"
+aws ec2 create-security-group --group-name wikipedia-minus-wikipedians-$environment_name --description "Security group for EC2 instances in Wikipedia Minus Wikipedians environment $environment_name"
 echo Authorizing inbound SSH for EC2 security group wikipedia-minus-wikipedians-$environment_name...
 aws ec2 authorize-security-group-ingress --group-name wikipedia-minus-wikipedians-$environment_name --protocol tcp --port 22 --cidr 0.0.0.0/0
 echo Authorizing inbound HTTP for EC2 security group wikipedia-minus-wikipedians-$environment_name...
@@ -67,3 +80,6 @@ do
     echo Waiting for instance $instance_id to be healthy...
     aws ec2 wait instance-status-ok --instance-ids $instance_id
 done
+
+echo Waiting for ElastiCache cache cluster WMW$environment_name to enter state \"available\"...
+aws elasticache wait cache-cluster-available --cache-cluster-id WMW$environment_name
