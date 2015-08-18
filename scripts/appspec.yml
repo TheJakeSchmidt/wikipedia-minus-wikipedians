@@ -1,0 +1,16 @@
+version: 0.0
+os: linux 
+files:
+  - source: /
+    destination: /home/ubuntu
+    owner: ubuntu
+  - source: wikipedia-minus-wikipedians.conf
+    destination: /etc/init
+
+hooks:
+   ApplicationStart:
+     - location: start_service.sh
+       runas: root
+   ApplicationStop:
+     - location: stop_service.sh
+       runas: root
