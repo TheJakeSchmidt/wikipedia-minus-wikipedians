@@ -64,10 +64,6 @@ aws s3api put-bucket-policy --bucket Wikipedia-Minus-Wikipedians-Revisions-$envi
 
 for instance_id in $(cat /tmp/run-instances-output.txt | ./parse_instance_names.py)
 do
-    echo Waiting for instance $instance_id to enter state \"running\"...
-    while [ "$(aws ec2 describe-instance-status --instance-ids $instance_id | ./parse_instance_state.py)" != "running" ]
-    do
-	sleep 1
-	echo Waiting for instance $instance_id to enter state \"running\"...
-    done
+    echo Waiting for instance $instance_id to be healthy...
+    aws ec2 wait instance-status-ok --instance-ids $instance_id
 done

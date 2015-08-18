@@ -17,14 +17,12 @@ do
     aws ec2 terminate-instances --instance-ids $instance_id
 done
 
+# The EC2 security group has a dependency on the running instances, so we have to wait for the EC2
+# instances to be terminated before we can delete the security group.
 for instance_id in $(aws ec2 describe-tags --filters Name=key,Values=WikipediaMinusWikipediansEnvironment Name=value,Values=$environment_name Name=resource-type,Values=instance | ./parse_tags.py)
 do
     echo Waiting for instance $instance_id to be terminated...
-    while [ "$(aws ec2 describe-instance-status --instance-ids $instance_id | ./parse_instance_state.py)" != "terminated" ] && [ "$(aws ec2 describe-instance-status --instance-ids $instance_id | ./parse_instance_state.py)" != "unknown" ]
-    do
-	sleep 1
-	echo Waiting for instance $instance_id to be terminated...
-    done
+    aws ec2 wait instance-terminated --instance-ids $instance_id
 done
 
 echo Deleting EC2 security group wikipedia-minus-wikipedians-$environment_name...
