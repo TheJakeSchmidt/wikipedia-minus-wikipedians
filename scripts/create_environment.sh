@@ -9,12 +9,12 @@
 #
 # The environment name must be no longer than 17 characters.
 #
-# Usage: create_environment.sh <environment> [<instance type> [<number of instances>]]
+# Usage: create_environment.sh <environment> [<EC2 instance type> [<number of EC2 instances> [<cache node type>]]]
 
-if [ "$#" -lt "1" ] || [ "$#" -gt "3" ]
+if [ "$#" -lt "1" ] || [ "$#" -gt "4" ]
 then
   echo Wrong number of arguments.
-  echo "Usage: $0 <environment> [<instance type> [<number of instances>]]"
+  echo "Usage: $0 <environment> [<EC2 instance type> [<number of EC2 instances> [<cache node type>]]]"
   exit
 fi
 
@@ -32,6 +32,13 @@ then
   instances=$3
 else
   instances=1
+fi
+
+if [ "$#" -gt "3" ]
+then
+  cache_node_type=$4
+else
+  cache_node_type=cache.t2.micro
 fi
 
 # Create IAM instance profile
@@ -69,9 +76,8 @@ aws ec2 authorize-security-group-ingress --group-name wikipedia-minus-wikipedian
 
 # Note: Cache cluster IDs are limited to 20 characters.
 echo Creating ElastiCache cache cluster WMW$environment_name...
-# TODO: take the cache node type from a command line argument
 # TODO: pass an availability zone here
-aws elasticache create-cache-cluster --cache-cluster-id WMW$environment_name --cache-node-type cache.t2.micro --engine redis --port 6379 --num-cache-nodes 1 --security-group-ids $(aws ec2 describe-security-groups --group-names wikipedia-minus-wikipedians-elasticache-$environment_name | ./parse_security_group_ids.py)
+aws elasticache create-cache-cluster --cache-cluster-id WMW$environment_name --cache-node-type $cache_node_type --engine redis --port 6379 --num-cache-nodes 1 --security-group-ids $(aws ec2 describe-security-groups --group-names wikipedia-minus-wikipedians-elasticache-$environment_name | ./parse_security_group_ids.py)
 
 # Bring up EC2 instances
 echo Creating EC2 security group wikipedia-minus-wikipedians-$environment_name...
