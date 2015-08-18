@@ -9,8 +9,6 @@
 #
 # Usage: create_environment.sh <environment>
 
-# TODO: bail out on error
-
 environment_name=$1
 
 # Create IAM instance profile
@@ -62,4 +60,12 @@ aws s3 mb s3://Wikipedia-Minus-Wikipedians-Revisions-$environment_name --region 
 cat s3_bucket_policy_template.json | sed s/ENVIRONMENT_NAME/$environment_name/ > /tmp/s3_bucket_policy.json
 aws s3api put-bucket-policy --bucket Wikipedia-Minus-Wikipedians-Revisions-$environment_name --policy file:///tmp/s3_bucket_policy.json
 
-# TODO: wait for instances to be running/healthy?
+for instance_id in $(cat /tmp/run-instances-output.txt | ./parse_instance_names.py)
+do
+    echo Waiting for instance $instance_id to enter state \"running\"...
+    while [ "$(aws ec2 describe-instance-status --instance-ids $instance_id | ./parse_instance_state.py)" != "running" ]
+    do
+	sleep 1
+	echo Waiting for instance $instance_id to enter state \"running\"...
+    done
+done

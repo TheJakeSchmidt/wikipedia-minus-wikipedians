@@ -17,8 +17,18 @@ do
     aws ec2 terminate-instances --instance-ids $instance_id
 done
 
-# TODO: wait for instances to be terminated, then delete the security group.
-#aws ec2 delete-security-group --group-name wikipedia-minus-wikipedians-$environment_name
+for instance_id in $(aws ec2 describe-tags --filters Name=key,Values=WikipediaMinusWikipediansEnvironment Name=value,Values=$environment_name Name=resource-type,Values=instance | ./parse_tags.py)
+do
+    echo Waiting for instance $instance_id to be terminated...
+    while [ "$(aws ec2 describe-instance-status --instance-ids $instance_id | ./parse_instance_state.py)" != "terminated" ] && [ "$(aws ec2 describe-instance-status --instance-ids $instance_id | ./parse_instance_state.py)" != "unknown" ]
+    do
+	sleep 1
+	echo Waiting for instance $instance_id to be terminated...
+    done
+done
+
+echo Deleting EC2 security group wikipedia-minus-wikipedians-$environment_name...
+aws ec2 delete-security-group --group-name wikipedia-minus-wikipedians-$environment_name
 
 echo Deleting CodeDeploy deployment group WikipediaMinusWikipedians$(echo $environment_name)...
 aws deploy delete-deployment-group --application-name WikipediaMinusWikipedians$(echo $environment_name) --deployment-group-name WikipediaMinusWikipedians$(echo $environment_name)
