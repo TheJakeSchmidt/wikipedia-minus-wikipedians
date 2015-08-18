@@ -4,6 +4,13 @@
 #
 # Usage: deploy_revision.sh <environment>
 
+if [ "$#" -ne "1" ]
+then
+  echo Wrong number of arguments.
+  echo "Usage: $0 <environment>"
+  exit
+fi
+
 environment_name=$1
 redis_node_address="$(aws elasticache describe-cache-clusters --cache-cluster-id WMW$environment_name --show-cache-node-info | ./parse_cache_node_endpoints.py)"
 
