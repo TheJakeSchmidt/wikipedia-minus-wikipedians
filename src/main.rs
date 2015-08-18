@@ -433,7 +433,7 @@ fn main() {
             Wiki::new(wiki_hostname.to_string(), wiki_port, Client::new(), redis_connection_info),
             Client::new(), Merger::new(diff_size_limit, diff_time_limit_ms),
             max_consecutive_diff_timeouts);
-    Iron::new(handler).http(("localhost", port)).unwrap();
+    Iron::new(handler).http(("0.0.0.0", port)).unwrap();
 }
 
 #[cfg(test)]
