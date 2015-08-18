@@ -7,9 +7,10 @@
 # script contains the environment name, so that many environments can coexist in isolation from each
 # other.
 #
-# Usage: create_environment.sh <environment>
+# Usage: create_environment.sh <environment> <instance type>
 
 environment_name=$1
+instance_type=$2
 
 # Create IAM instance profile
 # Created based on the instructions at
@@ -47,8 +48,8 @@ aws ec2 authorize-security-group-ingress --group-name wikipedia-minus-wikipedian
 echo Authorizing inbound HTTP for EC2 security group wikipedia-minus-wikipedians-$environment_name...
 aws ec2 authorize-security-group-ingress --group-name wikipedia-minus-wikipedians-$environment_name --protocol tcp --port 80 --cidr 0.0.0.0/0
 # TODO: Fix the name of that key pair.
-echo Bringing up 3 EC2 instances...
-aws ec2 run-instances --image-id ami-d05e75b8 --key-name "Wikipedia Without Wikipedians" --user-data file://instance-setup.sh --count 3 --instance-type t2.micro --iam-instance-profile Name=Wikipedia-Minus-Wikipedians-$environment_name-EC2-Instance-Profile --security-groups wikipedia-minus-wikipedians-$environment_name > /tmp/run-instances-output.txt
+echo Bringing up 3 $instance_type EC2 instances...
+aws ec2 run-instances --image-id ami-d05e75b8 --key-name "Wikipedia Without Wikipedians" --user-data file://instance-setup.sh --count 3 --instance-type $instance_type --iam-instance-profile Name=Wikipedia-Minus-Wikipedians-$environment_name-EC2-Instance-Profile --security-groups wikipedia-minus-wikipedians-$environment_name > /tmp/run-instances-output.txt
 for instance_id in $(cat /tmp/run-instances-output.txt | ./parse_instance_names.py)
 do
     echo Tagging EC2 instance $instance_id with WikipediaMinusWikipediansEnvironment=$environment_name...
