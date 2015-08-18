@@ -9,11 +9,30 @@
 #
 # The environment name must be no longer than 17 characters.
 #
-# Usage: create_environment.sh <environment> <instance type> <number of instances>
+# Usage: create_environment.sh <environment> [<instance type> <number of instances>]
+
+if [ "$#" -lt "1" ] || [ "$#" -gt "3" ]
+then
+  echo Wrong number of arguments.
+  echo "Usage: $0 <environment> [<instance type> [<number of instances>]]"
+  exit
+fi
 
 environment_name=$1
-instance_type=$2
-instances=$3
+
+if [ "$#" -gt "1" ]
+then
+  instance_type=$2
+else
+  instance_type="t2.micro"
+fi
+
+if [ "$#" -gt "2" ]
+then
+  instances=$3
+else
+  instances=1
+fi
 
 # Create IAM instance profile
 # Created based on the instructions at

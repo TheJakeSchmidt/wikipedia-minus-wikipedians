@@ -5,6 +5,13 @@
 #
 # Usage: destroy_environment.sh <environment>
 
+if [ "$#" -ne "1" ]
+then
+  echo Wrong number of arguments.
+  echo "Usage: $0 <environment>"
+  exit
+fi
+
 environment_name=$1
 
 echo Removing S3 bucket Wikipedia-Minus-Wikipedians-Revisions-$environment_name...
