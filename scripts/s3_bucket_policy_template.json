@@ -1,0 +1,14 @@
+{
+  "Statement": [
+    {
+      "Action": ["s3:Get*", "s3:List*"],
+      "Effect": "Allow",
+      "Resource": "arn:aws:s3:::Wikipedia-Minus-Wikipedians-Revisions-ENVIRONMENT_NAME/*",
+      "Principal": {
+        "AWS": [
+	  "arn:aws:iam::558005360476:role/Wikipedia-Minus-Wikipedians-ENVIRONMENT_NAME-EC2"
+        ]
+      }
+    }
+  ]
+}
