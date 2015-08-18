@@ -9,7 +9,7 @@
 #
 # The environment name must be no longer than 17 characters.
 #
-# Usage: create_environment.sh <environment> [<instance type> <number of instances>]
+# Usage: create_environment.sh <environment> [<instance type> [<number of instances>]]
 
 if [ "$#" -lt "1" ] || [ "$#" -gt "3" ]
 then
