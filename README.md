@@ -1,5 +1,3 @@
-# wikipedia-minus-wikipedians
-
 # Overview
 
 Wikipedia Minus Wikipedians shows what (English) Wikipedia would look like if nobody (and no bots)
