@@ -2,7 +2,7 @@
 
 # Creates an AWS environment (QA, prod, test, etc.) for running and deploying Wikipedia Without
 # Wikipedians. An environment consists of an EC2 instance profile (with an associated IAM role and
-# policy), a service role for CodeDeploy, a COdeDeploy application and deployment group, a set of
+# policy), a service role for CodeDeploy, a CodeDeploy application and deployment group, a set of
 # EC2 instances, an S3 bucket to hold code revisions, and an ElastiCache cache cluster containing
 # one Redis node. The name of every resource created by this script contains the environment name,
 # so that many environments can coexist in isolation from each other.
