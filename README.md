@@ -44,8 +44,8 @@ These instructions assume you've run "aws configure", and are acting as an IAM u
 permissions to create EC2 instances, S3 buckets, CodeDeploy applications and deployment groups, IAM
 roles, security groups, EC2 instance profiles, and ElastiCache cache clusters.
 
-First, pick an environment name (e.g. "prod", "QA", "NewFeatureTest"), no longer than 17 characters
-or shorter. Then, to bring up the environment (in this case, called NewFeatureTest) with 3
+First, pick an environment name (e.g. "prod", "QA", "NewFeatureTest"), no longer than 17
+characters. Then, to bring up the environment (in this case, called NewFeatureTest) with 3
 c4.2xlarge EC2 instances (instance type and number of instances are optional):
 
     $ cd scripts
