@@ -185,7 +185,7 @@ article. Many articles are protected from being edited by anonymous users; some 
 changed too much for the vandalism to stick. Some pages I've found that demonstrate multiple visible
 vandalisms:
 
-- [/wiki/Friday_(Rebecca_Black_song](http://wikipedia-minus-wikipedians-demo-1444009001.us-east-1.elb.amazonaws.com/wiki/Friday_(Rebecca_Black_song))
+- [/wiki/Friday_(Rebecca_Black_song)](http://wikipedia-minus-wikipedians-demo-1444009001.us-east-1.elb.amazonaws.com/wiki/Friday_(Rebecca_Black_song))
   has its entire first paragraph replaced with a JFK-assassination-related conspiracy theory.
 - [/wiki/William_Howard_Taft](http://wikipedia-minus-wikipedians-demo-1444009001.us-east-1.elb.amazonaws.com/wiki/William_Howard_Taft)
   has a couple of complete, grammatically correct sentences inserted below the fold, which is unusual.
