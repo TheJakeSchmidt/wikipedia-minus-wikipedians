@@ -1,11 +1,10 @@
 # Overview
 
-Wikipedia Minus Wikipedians shows what the English Wikipedia would look like if nobody (and no bots)
-were fixing all the vandalism. It provides a view into a dystopian alternate universe, where the
-content on Wikipedia consists of just enough real information for the vandalism to blend in
-unnoticed. It does this by finding all instances of vandalism in the page's revision history,
-performing a series of 3-way merges with the current contents of the page, and keeping whatever
-merges cleanly.
+Wikipedia Minus Wikipedians shows what the English Wikipedia would look like if nobody were fixing
+all the vandalism. It provides a view into a dystopian alternate universe, where the content on
+Wikipedia consists of just enough real information for the vandalism to blend in unnoticed. It does
+this by finding all instances of vandalism in the page's revision history, performing a series of
+3-way merges with the current contents of the page, and keeping whatever merges cleanly.
 
 To see Wikipedia Minus Wikipedians in action, see the [Example articles](#example-articles) section.
 
@@ -177,21 +176,30 @@ all - particularly, all the code paths that end with calls to Wikipedia or Redis
 
 # Example articles
 
+Please note that the content linked in this section may be **not safe for work**.
+
 There is a demo instance of Wikipedia Minus Wikipedians running on AWS. It consists of a single
 t2.medium instance, which is fairly weak, so **these links take between 10 and 20 seconds to
 render**.
 
 Not all articles have much, or even any, recent vandalism that merges cleanly into the current
 article. Many articles are protected from being edited by anonymous users; some articles have
-changed too much for the vandalism to stick. Some pages I've found that demonstrate multiple visible
-vandalisms:
+changed too much for the vandalism to stick. Additionally, the results can differ on different page
+loads, as small differences in merge time can cause revisions to be skipped sometimes and merged
+other times.
+
+Some pages I've found that demonstrated multiple visible vandalisms, as of August 2015:
 
 - [/wiki/Friday_(Rebecca_Black_song)](http://wikipedia-minus-wikipedians-demo-1444009001.us-east-1.elb.amazonaws.com/wiki/Friday_(Rebecca_Black_song))
-  has its entire first paragraph replaced with a JFK-assassination-related conspiracy theory.
+  ([screenshot](http://i.imgur.com/maSvg6A.png)) has its entire first paragraph replaced with a
+  JFK-assassination-related conspiracy theory.
 - [/wiki/William_Howard_Taft](http://wikipedia-minus-wikipedians-demo-1444009001.us-east-1.elb.amazonaws.com/wiki/William_Howard_Taft)
-  has a couple of complete, grammatically correct sentences inserted below the fold, which is unusual.
+  ([screenshot](http://i.imgur.com/jhF9udc.png)) has a couple of complete, grammatically correct
+  sentences inserted below the fold, which is unusual.
 - [/wiki/Zachary_Taylor](http://wikipedia-minus-wikipedians-demo-1444009001.us-east-1.elb.amazonaws.com/wiki/Zachary_Taylor)
-  has a surprisingly diverse set of random vandalisms.
+  ([screenshot](http://i.imgur.com/vLoCoQZ.png)) has a surprisingly diverse set of random
+  vandalisms.
 - [/wiki/My_World_2.0](http://wikipedia-minus-wikipedians-demo-1444009001.us-east-1.elb.amazonaws.com/wiki/My_World_2.0)
-  is an article about a Justin Bieber album, and has at least 10 instances of vandalism in its first
-  paragraph and infobox, almost all of it homophobic.
+  ([screenshot](http://i.imgur.com/KgMC7EQ.png)) is an article about a Justin Bieber album, and has
+  at least 10 instances of vandalism in its first paragraph and infobox, almost all of it
+  homophobic.
