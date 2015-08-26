@@ -179,8 +179,7 @@ all - particularly, all the code paths that end with calls to Wikipedia or Redis
 Please note that the content linked in this section may be **not safe for work**.
 
 There is a demo instance of Wikipedia Minus Wikipedians running on AWS. It consists of a single
-t2.medium instance, which is fairly weak, so **these links take between 10 and 20 seconds to
-render**.
+t2.medium instance, which is fairly weak, so these links take between 10 and 20 seconds to render.
 
 Not all articles have much, or even any, recent vandalism that merges cleanly into the current
 article. Many articles are protected from being edited by anonymous users; some articles have
