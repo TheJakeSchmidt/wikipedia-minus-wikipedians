@@ -167,8 +167,8 @@ If Rust has facilities that enable modern unit tests (injecting fake versions of
 monkey-patching, collaborator objects, to test class behavior hermetically), I can't find
 them. Traits might allow this in a similar way as Java interfaces, but they have drawbacks, and I
 don't think it would be idiomatic to try to code against traits instead of structs everywhere, just
-for the increased testability. So, many code paths in this repository just aren't unit tested at all
-- particularly, all the code paths that end with calls to Wikipedia or Redis.
+for the increased testability. So, many code paths in this repository just aren't unit tested at
+all - particularly, all the code paths that end with calls to Wikipedia or Redis.
 
 # Example articles
 
