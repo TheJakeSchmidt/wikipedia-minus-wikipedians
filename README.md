@@ -143,7 +143,8 @@ I'm parsing HTML with regular expressions (<http://stackoverflow.com/a/1732454>)
 takes place *after* wikitext parsing. So, for example, when someone vandalizes a page by changing an
 image to a different image, and that vandalism gets merged in, the merge marker is part of the image
 filename, and so it doesn't render properly (because it doesn't get removed until after wikitext
-parsing would generate the `<img>` tag).
+parsing would generate the `<img>` tag). In many cases, this also causes adjacent non-vandalism to
+be marked as vandalism, and vice versa.
 
 ## Going backward in time doing 3-way merges is slow and not parallelizable
 
